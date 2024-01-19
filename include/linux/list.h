@@ -8,6 +8,9 @@
 #include <sys/types.h>
 #include <stdlib.h>
 
+#include "linux/asm-generic/rwonce.h"
+#include "container_of.h"
+
 # define POISON_POINTER_DELTA 0
 
 #define LIST_POISON1  ((void *) 0x100 + POISON_POINTER_DELTA)
@@ -24,40 +27,6 @@ struct hlist_head {
 struct hlist_node {
 	struct hlist_node *next, **pprev;
 };
-
-#define WRITE_ONCE(x, val) \
-do { \
-	*(volatile typeof(x) *)&(x) = (val); \
-} while(0)
-
-#ifndef __scalar_type_to_expr_cases
-#define __scalar_type_to_expr_cases(type)                               \
-		unsigned type:  (unsigned type)0,                       \
-		signed type:    (signed type)0
-#endif
-#ifndef __unqual_scalar_typeof
-#define __unqual_scalar_typeof(x) typeof(                               \
-		_Generic((x),                                           \
-			 char:  (char)0,                                \
-			 __scalar_type_to_expr_cases(char),             \
-			 __scalar_type_to_expr_cases(short),            \
-			 __scalar_type_to_expr_cases(int),              \
-			 __scalar_type_to_expr_cases(long),             \
-			 __scalar_type_to_expr_cases(long long),        \
-			 default: (x)))
-#endif
-
-#define READ_ONCE(x) (*(const volatile __unqual_scalar_typeof(x) *)&(x))
-
-#ifndef offsetof
-#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
-#endif
-
-#ifndef container_of
-#define container_of(ptr, type, member) ({				\
-		const typeof(((type *)0)->member) * __mptr = (ptr);	\
-		(type *)((char *)__mptr - offsetof(type, member)); })
-#endif
 
 /*
  * Circular doubly linked list implementation.
@@ -149,7 +118,7 @@ static inline void __list_del(struct list_head * prev, struct list_head * next)
  * This is a special-purpose list clearing method used in the networking code
  * for lists allocated as per-cpu, where we don't want to incur the extra
  * WRITE_ONCE() overhead of a regular list_del_init(). The code that uses this
- * needs to check the node 'prev' pointer instead of calling list_empty().
+ * needs to check the l_node 'prev' pointer instead of calling list_empty().
  */
 static inline void __list_del_clearprev(struct list_head *entry)
 {
@@ -845,12 +814,12 @@ static inline void INIT_HLIST_NODE(struct hlist_node *h)
 }
 
 /**
- * hlist_unhashed - Has node been removed from list and reinitialized?
+ * hlist_unhashed - Has l_node been removed from list and reinitialized?
  * @h: Node to be checked
  *
- * Not that not all removal functions will leave a node in unhashed
+ * Not that not all removal functions will leave a l_node in unhashed
  * state.  For example, hlist_nulls_del_init_rcu() does leave the
- * node in unhashed state, but hlist_nulls_del() does not.
+ * l_node in unhashed state, but hlist_nulls_del() does not.
  */
 static inline int hlist_unhashed(const struct hlist_node *h)
 {
@@ -893,7 +862,7 @@ static inline void __hlist_del(struct hlist_node *n)
  * hlist_del - Delete the specified hlist_node from its list
  * @n: Node to delete.
  *
- * Note that this function leaves the node in hashed state.  Use
+ * Note that this function leaves the l_node in hashed state.  Use
  * hlist_del_init() or similar instead to unhash @n.
  */
 static inline void hlist_del(struct hlist_node *n)
@@ -907,7 +876,7 @@ static inline void hlist_del(struct hlist_node *n)
  * hlist_del_init - Delete the specified hlist_node from its list and initialize
  * @n: Node to delete.
  *
- * Note that this function leaves the node in unhashed state.
+ * Note that this function leaves the l_node in unhashed state.
  */
 static inline void hlist_del_init(struct hlist_node *n)
 {
@@ -938,7 +907,7 @@ static inline void hlist_add_head(struct hlist_node *n, struct hlist_head *h)
 /**
  * hlist_add_before - add a new entry before the one specified
  * @n: new entry to be added
- * @next: hlist node to add it before, which must be non-NULL
+ * @next: hlist l_node to add it before, which must be non-NULL
  */
 static inline void hlist_add_before(struct hlist_node *n,
 				    struct hlist_node *next)
@@ -952,7 +921,7 @@ static inline void hlist_add_before(struct hlist_node *n,
 /**
  * hlist_add_behind - add a new entry after the one specified
  * @n: new entry to be added
- * @prev: hlist node to add it after, which must be non-NULL
+ * @prev: hlist l_node to add it after, which must be non-NULL
  */
 static inline void hlist_add_behind(struct hlist_node *n,
 				    struct hlist_node *prev)
@@ -966,7 +935,7 @@ static inline void hlist_add_behind(struct hlist_node *n,
 }
 
 /**
- * hlist_add_fake - create a fake hlist consisting of a single headless node
+ * hlist_add_fake - create a fake hlist consisting of a single headless l_node
  * @n: Node to make a fake list out of
  *
  * This makes @n appear to be its own predecessor on a headless hlist.
@@ -979,7 +948,7 @@ static inline void hlist_add_fake(struct hlist_node *n)
 }
 
 /**
- * hlist_fake: Is this node a fake hlist?
+ * hlist_fake: Is this l_node a fake hlist?
  * @h: Node to check for being a self-referential fake hlist.
  */
 static inline int hlist_fake(struct hlist_node *h)
@@ -988,11 +957,11 @@ static inline int hlist_fake(struct hlist_node *h)
 }
 
 /**
- * hlist_is_singular_node - is node the only element of the specified hlist?
+ * hlist_is_singular_node - is l_node the only element of the specified hlist?
  * @n: Node to check for singularity.
  * @h: Header for potentially singular list.
  *
- * Check whether the node is the only node of the head without
+ * Check whether the l_node is the only l_node of the head without
  * accessing head, thus avoiding unnecessary cache misses.
  */
 static inline int

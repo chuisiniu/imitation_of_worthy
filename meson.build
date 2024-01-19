@@ -23,4 +23,4 @@ global_inc = include_directories(
 subdir('basic')
 subdir('event')
 subdir('echo_server')
-subdir('temp')
+subdir('test')
