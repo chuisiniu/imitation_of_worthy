@@ -79,6 +79,7 @@ int select_process_fd(struct list_head *l, fd_set *fdset, fd_set *poll_fdset)
 			FD_CLR(e->fd, poll_fdset);
 			list_del(&e->l_node);
 			list_add(&e->l_node, &e->scheduler->ready);
+			e->ready = 1;
 			n += 1;
 		}
 	}

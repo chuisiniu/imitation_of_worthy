@@ -50,7 +50,7 @@ static int event_timer_less(struct rb_node *a, const struct rb_node *b)
 	return event_tv_less(&ea->tv, &eb->tv);
 }
 
-struct event_mp_ops *event_get_mp_ops(enum event_multipath_type t)
+static inline struct event_mp_ops *event_get_mp_ops(enum event_multipath_type t)
 {
 	return &event_multipath_ops[t];
 }
@@ -73,7 +73,6 @@ struct event_scheduler *event_create_scheduler(
 	enum event_multipath_type type)
 {
 	struct event_scheduler *result;
-	struct timespec tp;
 
 	result = event_get_mp_ops(type)->create_scheduler();
 
@@ -114,6 +113,7 @@ struct event *event_get_free_event(
 	e->scheduler = s;
 	e->handler = handler;
 	e->arg = arg;
+	e->ready = 0;
 	snprintf(e->name, sizeof(e->name), "%s", name);
 
 	return e;
@@ -193,12 +193,22 @@ void event_cancel_event(struct event *e)
 		event_get_mp_ops(e->scheduler->type)->cancel_read(e);
 
 		break;
+	case EVENT_TIMER:
+		if (e->ready)
+			list_del(&e->l_node);
+		else
+			rb_erase_cached(&e->rb_node, &e->scheduler->timer);
+		list_add(&e->scheduler->free, &e->l_node);
+
+		break;
 	default:
 		break;
 	}
 
-	list_del(&e->l_node);
-	list_add(&e->scheduler->free, &e->l_node);
+	if (e->type != EVENT_TIMER) {
+		list_del(&e->l_node);
+		list_add(&e->scheduler->free, &e->l_node);
+	}
 }
 
 void event_get_first_timeout(struct event_scheduler *scheduler,
@@ -242,10 +252,12 @@ int event_process_timer(struct event_scheduler *scheduler)
 			  struct event, rb_node);
 	cnt = 0;
 	while (e && (event_tv_less(&e->tv, &now)
-	             || 0 == memcmp(&e->tv, &now, sizeof(e->tv)))) {
+	             || (e->tv.tv_sec == now.tv_sec
+	                 && e->tv.tv_usec == now.tv_usec))) {
 		rb_erase_cached(&e->rb_node, &scheduler->timer);
 
 		list_add(&e->l_node, &scheduler->ready);
+		e->ready = 1;
 
 		e = rb_entry_safe(rb_first_cached(&scheduler->timer),
 		                  struct event, rb_node);

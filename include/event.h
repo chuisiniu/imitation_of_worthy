@@ -45,6 +45,8 @@ struct event {
 		struct rb_node rb_node;
 	};
 
+	int ready;
+
 	struct event_scheduler *scheduler;
 
 	int (*handler)(struct event *);
