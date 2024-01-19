@@ -115,6 +115,18 @@ int listen_handler(struct event *e)
 	return 0;
 }
 
+int report_timer(struct event *e)
+{
+	static int counter = 0;
+
+	counter++;
+	printf("server running %d\n", counter);
+
+	event_add_timer(e->scheduler, report_timer, NULL, 1);
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	struct event_scheduler *scheduler;
@@ -137,6 +149,8 @@ int main(int argc, char **argv)
 		(struct sockaddr *) &saddr, sizeof(saddr));
 
 	event_add_read(scheduler, listen_handler, NULL, listen_fd);
+
+	event_add_timer(scheduler, report_timer, NULL, 1);
 
 	while (event_get_next(scheduler, &e)) {
 		event_handle_event(&e);

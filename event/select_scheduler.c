@@ -49,6 +49,24 @@ void select_set_write(
 	select_set_fd(&ss->write, e->fd, e->name);
 }
 
+void select_cancel_read(struct event *e)
+{
+	struct select_scheduler *ss;
+
+	ss = container_of(e->scheduler, struct select_scheduler, scheduler);
+
+	FD_CLR(e->fd, &ss->read);
+}
+
+void select_cancel_write(struct event *e)
+{
+	struct select_scheduler *ss;
+
+	ss = container_of(e->scheduler, struct select_scheduler, scheduler);
+
+	FD_CLR(e->fd, &ss->read);
+}
+
 int select_process_fd(struct list_head *l, fd_set *fdset, fd_set *poll_fdset)
 {
 	struct event *e;
@@ -56,11 +74,11 @@ int select_process_fd(struct list_head *l, fd_set *fdset, fd_set *poll_fdset)
 	int n;
 
 	n = 0;
-	list_for_each_entry_safe(e, tmp, l, node) {
+	list_for_each_entry_safe(e, tmp, l, l_node) {
 		if (FD_ISSET(e->fd, fdset)) {
 			FD_CLR(e->fd, poll_fdset);
-			list_del(&e->node);
-			list_add(&e->node, &e->scheduler->ready);
+			list_del(&e->l_node);
+			list_add(&e->l_node, &e->scheduler->ready);
 			n += 1;
 		}
 	}

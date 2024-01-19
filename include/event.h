@@ -1,6 +1,7 @@
 #ifndef __EVENT_H__
 #define __EVENT_H__
 #include "linux/list.h"
+#include "linux/rbtree_augmented.h"
 
 #include "memhook.h"
 
@@ -24,6 +25,8 @@ struct event_scheduler {
 
 	int nr_alloced;
 
+	struct rb_root_cached timer;
+
 	struct list_head read;
 	struct list_head write;
 
@@ -37,7 +40,10 @@ struct event_scheduler {
 struct event {
 	enum event_event_type type;
 
-	struct list_head node;
+	union {
+		struct list_head l_node;
+		struct rb_node rb_node;
+	};
 
 	struct event_scheduler *scheduler;
 
@@ -48,13 +54,8 @@ struct event {
 
 	union {
 		int fd;
+		struct timeval tv;
 	};
-};
-
-struct event_timer {
-	struct event event;
-
-	int remain;
 };
 
 struct event *event_add_read_with_name(
@@ -67,6 +68,11 @@ struct event *event_add_write_with_name(
 	int (*handler)(struct event *),
 	void *arg, int fd, char *name);
 
+struct event *event_add_timer_with_name(
+	struct event_scheduler *scheduler,
+	int (*handler)(struct event *),
+	void *arg, int sec, char *name);
+
 #define event_add_read(_scheduler_, _handler_, _arg_, _fd_) \
 	event_add_read_with_name( \
 		_scheduler_, _handler_, _arg_, _fd_, \
@@ -77,11 +83,18 @@ struct event *event_add_write_with_name(
 		_scheduler_, _handler_, _arg_, _fd_, \
 		#_handler_" on "#_fd_)
 
+#define event_add_timer(_scheduler_, _handler_, _arg_, _sec_) \
+	event_add_timer_with_name( \
+		_scheduler_, _handler_, _arg_, _sec_, \
+		#_handler_" after "#_sec_" seconds")
+
 struct event_scheduler *event_create_scheduler(
 	enum event_multipath_type type);
 
 struct event *event_get_next(struct event_scheduler *scheduler, struct event *);
 
 void event_handle_event(struct event *e);
+
+void event_cancel_event(struct event *e);
 
 #endif

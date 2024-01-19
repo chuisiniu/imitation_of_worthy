@@ -22,4 +22,8 @@ void select_set_write(
 
 int select_poll(struct event_scheduler *s, struct timeval *tv);
 
+void select_cancel_read(struct event *e);
+
+void select_cancel_write(struct event *e);
+
 #endif
