@@ -256,7 +256,7 @@ int event_process_timer(struct event_scheduler *scheduler)
 	                 && e->tv.tv_usec == now.tv_usec))) {
 		rb_erase_cached(&e->rb_node, &scheduler->timer);
 
-		list_add(&e->l_node, &scheduler->ready);
+		list_add_tail(&e->l_node, &scheduler->ready);
 		e->ready = 1;
 
 		e = rb_entry_safe(rb_first_cached(&scheduler->timer),
