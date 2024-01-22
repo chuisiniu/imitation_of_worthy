@@ -12,6 +12,8 @@
 
 #define MAX_CLIENTS 256
 
+#define REPORT_INTERVAL 60
+
 static int
 get_none_block_tcp_listen_socket(struct sockaddr *addr, socklen_t len)
 {
@@ -122,7 +124,7 @@ int report_timer(struct event *e)
 	counter++;
 	printf("server running %d\n", counter);
 
-	event_add_timer(e->scheduler, report_timer, NULL, 1);
+	event_add_timer(e->scheduler, report_timer, NULL, REPORT_INTERVAL);
 
 	return 0;
 }
@@ -150,7 +152,7 @@ int main(int argc, char **argv)
 
 	event_add_read(scheduler, listen_handler, NULL, listen_fd);
 
-	event_add_timer(scheduler, report_timer, NULL, 1);
+	event_add_timer(scheduler, report_timer, NULL, REPORT_INTERVAL);
 
 	while (event_get_next(scheduler, &e)) {
 		event_handle_event(&e);
