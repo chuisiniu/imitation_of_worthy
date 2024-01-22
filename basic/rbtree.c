@@ -6,7 +6,7 @@
  *  1) A l_node is either red or black
  *  2) The root is black
  *  3) All leaves (NULL) are black
- *  4) Both children of every red l_node are black
+ *  4) Both next of every red l_node are black
  *  5) Every simple path from root to leaves contains the same number
  *     of black nodes.
  *
@@ -528,7 +528,7 @@ struct rb_node *rb_next(const struct rb_node *node)
 	}
 
 	/*
-	 * No right-hand children. Everything down and left is smaller than us,
+	 * No right-hand next. Everything down and left is smaller than us,
 	 * so any 'next' l_node must be in the general direction of our parent.
 	 * Go up the tree; any time the ancestor is a right-hand child of its
 	 * parent, keep going up. First time it's a left-hand child of its
@@ -559,7 +559,7 @@ struct rb_node *rb_prev(const struct rb_node *node)
 	}
 
 	/*
-	 * No left-hand children. Go up till we find an ancestor which
+	 * No left-hand next. Go up till we find an ancestor which
 	 * is a right-hand child of its parent.
 	 */
 	while ((parent = rb_parent(node)) && node == parent->rb_left)
@@ -603,7 +603,7 @@ struct rb_node *rb_next_postorder(const struct rb_node *node)
 		return NULL;
 	parent = rb_parent(node);
 
-	/* If we're sitting on l_node, we've already seen our children */
+	/* If we're sitting on l_node, we've already seen our next */
 	if (parent && node == parent->rb_left && parent->rb_right) {
 		/* If we are the parent's left l_node, go to the parent's right
 		 * l_node then all the way down to the left */
