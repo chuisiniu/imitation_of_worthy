@@ -1,5 +1,6 @@
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
+
 #include "linux/rbtree_augmented.h"
 
 static int suite_init(void)
@@ -161,24 +162,13 @@ static CU_SuiteInfo suites[] = {
 	CU_SUITE_INFO_NULL,
 };
 
-int main()
+int register_rb_tree_test()
 {
-	/* initialize the CUnit test registry */
-	if (CUE_SUCCESS != CU_initialize_registry()) {
-		return CU_get_error();
-	}
-
 	/* Register suites. */
 	if (CUE_SUCCESS != CU_register_suites(suites)) {
 		CU_cleanup_registry();
 		return CU_get_error();
 	}
 
-	/* Run all tests using the CUnit Basic interface */
-	CU_basic_set_mode(CU_BRM_VERBOSE);
-	CU_basic_run_tests();
-
-	/* Clean up registry and return */
-	CU_cleanup_registry();
-	return CU_get_error();
+	return 0;
 }
