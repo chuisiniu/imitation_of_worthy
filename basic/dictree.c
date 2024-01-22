@@ -267,7 +267,6 @@ char *dt_print_to_str(struct dict_tree *tree, char *dst, int len)
 	int c;
 	struct dt_node *node;
 	struct dt_node_arr *arr;
-	struct dt_node_arr *tmp;
 
 	int wlen;
 
