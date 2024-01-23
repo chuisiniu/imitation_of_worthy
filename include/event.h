@@ -5,15 +5,6 @@
 
 #include "memhook.h"
 
-enum event_multipath_type {
-	EVENT_MULTIPATH_SELECT,
-	EVENT_MULTIPATH_POLL,
-	EVENT_MULTIPATH_EPOLL,
-	EVENT_MULTIPATH_KQUEUE,
-
-	EVENT_MULTIPATH_MAX,
-};
-
 enum event_event_type {
 	EVENT_READ,
 	EVENT_WRITE,
@@ -21,14 +12,12 @@ enum event_event_type {
 };
 
 struct event_scheduler {
-	enum event_multipath_type type;
-
 	int nr_alloced;
 
 	struct rb_root_cached timer;
 
-	struct list_head read;
-	struct list_head write;
+	struct rb_root_cached read;
+	struct rb_root_cached write;
 
 	struct list_head ready;
 
@@ -90,13 +79,15 @@ struct event *event_add_timer_with_name(
 		_scheduler_, _handler_, _arg_, _sec_, \
 		#_handler_" after "#_sec_" seconds")
 
-struct event_scheduler *event_create_scheduler(
-	enum event_multipath_type type);
+struct event_scheduler *event_create_scheduler();
 
 struct event *event_get_next(struct event_scheduler *scheduler, struct event *);
 
 void event_handle_event(struct event *e);
 
 void event_cancel_event(struct event *e);
+
+struct event *event_find_read_of_fd(struct event_scheduler *scheduler, int fd);
+struct event *event_find_write_of_fd(struct event_scheduler *scheduler, int fd);
 
 #endif

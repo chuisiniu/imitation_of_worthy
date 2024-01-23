@@ -1,1 +1,2 @@
 option('use_memhook', type: 'boolean', value: true, description: 'Use memhook.')
+option('multipath_type', type: 'string', value: 'select', description: 'Multipath type, select poll epoll or kqueue.')

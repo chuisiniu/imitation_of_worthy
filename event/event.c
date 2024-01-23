@@ -4,26 +4,39 @@
 #include <assert.h>
 
 #include "event.h"
+#ifdef EVENT_MULTIPATH_EPOLL
+#include "epoll_scheduler.h"
+#endif
+#ifdef EVENT_MULTIPATH_SELECT
 #include "select_scheduler.h"
+#endif
 
 #define MICRO_SEC_PER_SEC 1000000L
 
 struct event_mp_ops {
 	struct event_scheduler *(* create_scheduler)();
-	void (* set_write)(struct event_scheduler *s, struct event *e);
-	void (* set_read)(struct event_scheduler *s, struct event *e);
+	void (* set_write)(struct event *e);
+	void (* set_read)(struct event *e);
 	void (* cancel_write)(struct event *e);
 	void (* cancel_read)(struct event *e);
 	int (* poll)(struct event_scheduler *s, struct timeval *tv);
-} event_multipath_ops[EVENT_MULTIPATH_MAX] = {
-	[EVENT_MULTIPATH_SELECT] = {
+} event_multipath_ops = {
+#ifdef EVENT_MULTIPATH_EPOLL
+	.create_scheduler = epoll_create_scheduler,
+	.set_write = epoll_set_write,
+	.set_read = epoll_set_read,
+	.cancel_write = epoll_cancel_write,
+	.cancel_read = epoll_cancel_read,
+	.poll = epoll_poll,
+#endif
+#ifdef EVENT_MULTIPATH_SELECT
 		.create_scheduler = select_create_scheduler,
 		.set_write = select_set_write,
 		.set_read = select_set_read,
 		.cancel_write = select_cancel_write,
 		.cancel_read = select_cancel_read,
 		.poll = select_poll,
-	}
+#endif
 };
 
 static inline int event_tv_less(const struct timeval *a, const struct timeval *b)
@@ -31,6 +44,23 @@ static inline int event_tv_less(const struct timeval *a, const struct timeval *b
 	if (a->tv_sec < b->tv_sec
 	    || (a->tv_sec == b->tv_sec
 	        && a->tv_usec < b->tv_usec))
+		return 1;
+
+	return 0;
+}
+
+static int event_fd_less(struct rb_node *a, const struct rb_node *b)
+{
+	struct event *ea;
+	struct event *eb;
+
+	ea = rb_entry_safe(a, struct event, rb_node);
+	eb = rb_entry_safe(b, struct event, rb_node);
+
+	assert(ea->type == EVENT_READ || ea->type == EVENT_WRITE);
+	assert(eb->type == EVENT_READ || eb->type == EVENT_WRITE);
+
+	if (ea->fd < eb->fd)
 		return 1;
 
 	return 0;
@@ -50,9 +80,18 @@ static int event_timer_less(struct rb_node *a, const struct rb_node *b)
 	return event_tv_less(&ea->tv, &eb->tv);
 }
 
-static inline struct event_mp_ops *event_get_mp_ops(enum event_multipath_type t)
+static int event_fd_cmp(const void *key, const struct rb_node *node)
 {
-	return &event_multipath_ops[t];
+	struct event *e;
+
+	e = rb_entry_safe(node, struct event, rb_node);
+
+	return *(const int *)key - e->fd;
+}
+
+static inline struct event_mp_ops *event_get_mp_ops()
+{
+	return &event_multipath_ops;
 }
 
 static int event_get_timeval(struct timeval *tv)
@@ -69,20 +108,18 @@ static int event_get_timeval(struct timeval *tv)
 	return ret;
 }
 
-struct event_scheduler *event_create_scheduler(
-	enum event_multipath_type type)
+struct event_scheduler *event_create_scheduler()
 {
 	struct event_scheduler *result;
 
-	result = event_get_mp_ops(type)->create_scheduler();
+	result = event_get_mp_ops()->create_scheduler();
 
-	result->type = type;
 	result->nr_alloced = 0;
 
 	result->timer = RB_ROOT_CACHED;
 
-	INIT_LIST_HEAD(&result->read);
-	INIT_LIST_HEAD(&result->write);
+	result->read = RB_ROOT_CACHED;
+	result->write = RB_ROOT_CACHED;
 
 	INIT_LIST_HEAD(&result->ready);
 
@@ -124,8 +161,8 @@ struct event *event_add_io_with_name(
 	int (*handler)(struct event *),
 	void *arg, int fd,
 	enum event_event_type t,
-	void (* set_fn)(struct event_scheduler *s, struct event *e),
-	struct list_head *head,
+	void (* set_fn)(struct event *e),
+	struct rb_root_cached *tree,
 	char *name)
 {
 	struct event *e;
@@ -137,8 +174,8 @@ struct event *event_add_io_with_name(
 	e->type = t;
 	e->fd = fd;
 
-	set_fn(scheduler, e);
-	list_add(&e->l_node, head);
+	set_fn(e);
+	rb_add_cached(&e->rb_node, tree, event_fd_less);
 
 	return e;
 }
@@ -150,7 +187,7 @@ struct event *event_add_read_with_name(
 {
 	return event_add_io_with_name(
 		scheduler, handler,arg, fd, EVENT_READ,
-		select_set_read, &scheduler->read, name);
+		event_get_mp_ops()->set_read, &scheduler->read, name);
 }
 
 struct event *event_add_write_with_name(
@@ -160,7 +197,7 @@ struct event *event_add_write_with_name(
 {
 	return event_add_io_with_name(
 		scheduler, handler, arg, fd, EVENT_WRITE,
-		select_set_write, &scheduler->write, name);
+		event_get_mp_ops()->set_write, &scheduler->write, name);
 }
 
 struct event *event_add_timer_with_name(
@@ -186,11 +223,11 @@ void event_cancel_event(struct event *e)
 {
 	switch (e->type) {
 	case EVENT_WRITE:
-		event_get_mp_ops(e->scheduler->type)->cancel_write(e);
+		event_get_mp_ops()->cancel_write(e);
 
 		break;
 	case EVENT_READ:
-		event_get_mp_ops(e->scheduler->type)->cancel_read(e);
+		event_get_mp_ops()->cancel_read(e);
 
 		break;
 	case EVENT_TIMER:
@@ -292,11 +329,32 @@ struct event *event_get_next(struct event_scheduler *scheduler, struct event *ne
 		else
 			bzero(&tv, sizeof(tv));
 
-		event_get_mp_ops(scheduler->type)->poll(scheduler, &tv);
+		event_get_mp_ops()->poll(scheduler, &tv);
 	}
 }
 
 void event_handle_event(struct event *e)
 {
 	e->handler(e);
+}
+
+struct event *event_find_event_of_fd(struct rb_root *tree, int fd)
+{
+	struct rb_node *n;
+
+	n = rb_find(&fd, tree, event_fd_cmp);
+	if (NULL == n)
+		return NULL;
+
+	return rb_entry_safe(n ,struct event, rb_node);
+}
+
+struct event *event_find_read_of_fd(struct event_scheduler *scheduler, int fd)
+{
+	return event_find_event_of_fd(&scheduler->read.rb_root, fd);
+}
+
+struct event *event_find_write_of_fd(struct event_scheduler *scheduler, int fd)
+{
+	return event_find_event_of_fd(&scheduler->write.rb_root, fd);
 }

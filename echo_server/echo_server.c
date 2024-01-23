@@ -137,7 +137,7 @@ int main(int argc, char **argv)
 	struct sockaddr_in saddr;
 	struct event e;
 
-	scheduler = event_create_scheduler(EVENT_MULTIPATH_SELECT);
+	scheduler = event_create_scheduler();
 	if (NULL == scheduler) {
 		perror("event_create_scheduler");
 
@@ -150,6 +150,11 @@ int main(int argc, char **argv)
 
 	listen_fd = get_none_block_tcp_listen_socket(
 		(struct sockaddr *) &saddr, sizeof(saddr));
+	if (listen_fd < 0) {
+		perror("get_none_block_tcp_listen_socket");
+
+		exit(-1);
+	}
 
 	event_add_read(scheduler, listen_handler, NULL, listen_fd);
 
