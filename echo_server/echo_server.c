@@ -104,6 +104,7 @@ int listen_handler(struct event *e)
 	socklen_t len;
 	int fd;
 
+	len = sizeof(addr);
 	fd = accept(e->fd, &addr, &len);
 	if (fd < 0) {
 		perror("accept");
