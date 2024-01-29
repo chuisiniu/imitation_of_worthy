@@ -3,59 +3,15 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <strings.h>
-#include <errno.h>
 
+#include "network_funcs.h"
 #include "event.h"
 #include "echo_server.h"
 
 #define MAX_CLIENTS 256
 
 #define REPORT_INTERVAL 60
-
-static int
-get_none_block_tcp_listen_socket(struct sockaddr *addr, socklen_t len)
-{
-	int fd;
-
-	switch (addr->sa_family) {
-	case AF_INET:
-		fd = socket(PF_INET, SOCK_STREAM, 0);
-
-		break;
-	case AF_INET6:
-		fd = socket(PF_INET6, SOCK_STREAM, 0);
-
-		break;
-	case AF_UNIX:
-		fd = socket(PF_UNIX, SOCK_STREAM, 0);
-
-		break;
-	default:
-		return -1;
-	}
-
-	if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0) {
-		perror("fcntl");
-
-		return -1;
-	}
-
-	if (bind(fd, addr, len) < 0) {
-		perror("bind");
-
-		return -1;
-	}
-
-	if (listen(fd, MAX_CLIENTS) < 0) {
-		perror("listern error");
-
-		return -1;
-	}
-
-	return fd;
-}
 
 int read_handler(struct event *e)
 {
@@ -149,7 +105,7 @@ int main(int argc, char **argv)
 	saddr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
 	listen_fd = get_none_block_tcp_listen_socket(
-		(struct sockaddr *) &saddr, sizeof(saddr));
+		(struct sockaddr *) &saddr, sizeof(saddr), MAX_CLIENTS);
 	if (listen_fd < 0) {
 		perror("get_none_block_tcp_listen_socket");
 

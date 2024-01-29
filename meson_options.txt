@@ -1,2 +1,4 @@
 option('use_memhook', type: 'boolean', value: true, description: 'Use memhook.')
 option('multipath_type', type: 'string', value: 'select', description: 'Multipath type, select poll epoll or kqueue.')
+option('openssl_lib_path', type: 'string', value: '', description: 'Openssl library path')
+option('openssl_header_path', type: 'string', value: '', description: 'Openssl header path')

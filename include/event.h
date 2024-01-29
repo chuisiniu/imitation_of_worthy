@@ -67,17 +67,17 @@ struct event *event_add_timer_with_name(
 #define event_add_read(_scheduler_, _handler_, _arg_, _fd_) \
 	event_add_read_with_name( \
 		_scheduler_, _handler_, _arg_, _fd_, \
-		#_handler_" on "#_fd_)
+		#_handler_)
 
 #define event_add_write(_scheduler_, _handler_, _arg_, _fd_) \
 	event_add_write_with_name( \
 		_scheduler_, _handler_, _arg_, _fd_, \
-		#_handler_" on "#_fd_)
+		#_handler_)
 
 #define event_add_timer(_scheduler_, _handler_, _arg_, _sec_) \
 	event_add_timer_with_name( \
 		_scheduler_, _handler_, _arg_, _sec_, \
-		#_handler_" after "#_sec_" seconds")
+		#_handler_)
 
 struct event_scheduler *event_create_scheduler();
 

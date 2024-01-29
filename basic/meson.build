@@ -1,5 +1,7 @@
 basic_lib = library('basic',
-		files(['memhook.c',
-			   'rbtree.c',
-			   'dictree.c']),
+		files(['dictree.c',
+			   'log.c',
+			   'memhook.c',
+			   'network_funcs.c',
+			   'rbtree.c']),
 		include_directories: global_inc)

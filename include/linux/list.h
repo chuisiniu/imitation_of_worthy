@@ -949,7 +949,7 @@ static inline void hlist_add_fake(struct hlist_node *n)
 
 /**
  * hlist_fake: Is this l_node a fake hlist?
- * @h: Node to check for being a self-referential fake hlist.
+ * @h: Node to check for being a cself-referential fake hlist.
  */
 static inline int hlist_fake(struct hlist_node *h)
 {

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <assert.h>
 
+#include "log.h"
 #include "event.h"
 #ifdef EVENT_MULTIPATH_EPOLL
 #include "epoll_scheduler.h"
@@ -12,6 +13,8 @@
 #endif
 
 #define MICRO_SEC_PER_SEC 1000000L
+
+#define DEFAULT_TIMER_INTERVAL 10000L
 
 struct event_mp_ops {
 	struct event_scheduler *(* create_scheduler)();
@@ -139,6 +142,11 @@ struct event *event_get_free_event(
 
 	if (list_empty(&s->free)) {
 		e = mem_alloc(sizeof(*e));
+		if (NULL == e) {
+			log_error("fail to alloc event");
+
+			return NULL;
+		}
 		s->nr_alloced += 1;
 	} else {
 		e = list_first_entry(
@@ -168,14 +176,20 @@ struct event *event_add_io_with_name(
 	struct event *e;
 
 	e = event_get_free_event(scheduler, t, handler, arg, name);
-	if (NULL == e)
+	if (NULL == e) {
+		log_error("fail to get free event when add io event, "
+			  "name: %s, fd %d", name, fd);
+
 		return NULL;
+	}
 
 	e->type = t;
 	e->fd = fd;
 
 	set_fn(e);
 	rb_add_cached(&e->rb_node, tree, event_fd_less);
+
+	log_debug("add %s on %d", name, fd);
 
 	return e;
 }
@@ -208,44 +222,68 @@ struct event *event_add_timer_with_name(
 	struct event *e;
 
 	e = event_get_free_event(scheduler, EVENT_TIMER, handler, arg, name);
-	if (NULL == e)
+	if (NULL == e) {
+		log_error("fail to get free event when add timer event, "
+		          "name: %s, sec %d", name, sec);
+
 		return NULL;
+	}
 
 	event_get_timeval(&e->tv);
 	e->tv.tv_sec += sec;
 
 	rb_add_cached(&e->rb_node, &scheduler->timer, event_timer_less);
 
+	log_debug("add %s after %d seconds", name, sec);
+
 	return e;
 }
 
 void event_cancel_event(struct event *e)
 {
+	struct rb_root_cached *root;
+
+	root = NULL;
 	switch (e->type) {
 	case EVENT_WRITE:
+		log_debug("cancel write evnet, name: %s, fd: %d",
+		          e->name, e->fd);
+
 		event_get_mp_ops()->cancel_write(e);
+
+		if (!e->ready)
+			root = &e->scheduler->write;
 
 		break;
 	case EVENT_READ:
+		log_debug("cancel read evnet, name: %s, fd: %d",
+		          e->name, e->fd);
+
 		event_get_mp_ops()->cancel_read(e);
+
+		if (!e->ready)
+			root = &e->scheduler->read;
 
 		break;
 	case EVENT_TIMER:
-		if (e->ready)
-			list_del(&e->l_node);
-		else
-			rb_erase_cached(&e->rb_node, &e->scheduler->timer);
-		list_add(&e->scheduler->free, &e->l_node);
+		log_debug("cancel timer, name: %s", e->name);
+
+		if (!e->ready)
+			root = &e->scheduler->timer;
 
 		break;
 	default:
+		log_error("cancel invalid event type %d", e->type);;
+
 		break;
 	}
 
-	if (e->type != EVENT_TIMER) {
+	if (root)
+		rb_erase_cached(&e->rb_node, root);
+	else
 		list_del(&e->l_node);
-		list_add(&e->scheduler->free, &e->l_node);
-	}
+
+	list_add(&e->l_node, &e->scheduler->free);
 }
 
 void event_get_first_timeout(struct event_scheduler *scheduler,
@@ -257,6 +295,12 @@ void event_get_first_timeout(struct event_scheduler *scheduler,
 	first = rb_entry_safe(rb_first_cached(&scheduler->timer),
 			      struct event, rb_node);
 	event_get_timeval(&now);
+	if (NULL == first) {
+		tv->tv_usec = DEFAULT_TIMER_INTERVAL;
+		tv->tv_sec = 0;
+
+		return;
+	}
 
 	tv->tv_usec = first->tv.tv_usec - now.tv_usec;
 	tv->tv_sec = first->tv.tv_sec - now.tv_sec;
@@ -293,8 +337,10 @@ int event_process_timer(struct event_scheduler *scheduler)
 	                 && e->tv.tv_usec == now.tv_usec))) {
 		rb_erase_cached(&e->rb_node, &scheduler->timer);
 
-		list_add_tail(&e->l_node, &scheduler->ready);
+		log_debug("timer %s is ready", e->name);
+
 		e->ready = 1;
+		list_add_tail(&e->l_node, &scheduler->ready);
 
 		e = rb_entry_safe(rb_first_cached(&scheduler->timer),
 		                  struct event, rb_node);
@@ -304,7 +350,9 @@ int event_process_timer(struct event_scheduler *scheduler)
 	return cnt;
 }
 
-struct event *event_get_next(struct event_scheduler *scheduler, struct event *next)
+struct event *event_get_next(
+	struct event_scheduler *scheduler,
+	struct event *next)
 {
 	struct event *e;
 	struct timeval tv;
@@ -312,12 +360,16 @@ struct event *event_get_next(struct event_scheduler *scheduler, struct event *ne
 
 	while (1) {
 		if (!list_empty(&scheduler->ready)) {
-			e = list_first_entry(&scheduler->ready, struct event, l_node);
+			e = list_first_entry(&scheduler->ready,
+					     struct event, l_node);
 
 			*next = *e;
 
 			list_del(&e->l_node);
 			list_add(&e->l_node, &scheduler->free);
+
+			log_debug("get event, type %d, name %s",
+				  next->type, next->name);
 
 			return next;
 		}

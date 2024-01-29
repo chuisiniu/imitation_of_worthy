@@ -143,8 +143,8 @@ int epoll_poll(struct event_scheduler *s, struct timeval *tv)
 				epoll_process(es, e, EPOLL_CTL_DEL, EPOLLOUT);
 		}
 
-		list_add_tail(&e->l_node, &s->ready);
 		e->ready = 1;
+		list_add_tail(&e->l_node, &s->ready);
 	}
 
 	return nr;
