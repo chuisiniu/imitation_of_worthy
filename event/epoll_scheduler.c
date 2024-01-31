@@ -1,10 +1,55 @@
 #include <sys/epoll.h>
 #include <stdio.h>
+#include <assert.h>
 
+#include "memhook.h"
 #include "epoll_scheduler.h"
 
 #define EPOLL_MAX_SIZE 4096
 #define EPOLL_MAX_EVENT 128
+
+struct epoll_node {
+	struct rb_node node;
+
+	int fd;
+
+	struct event *read;
+	struct event *write;
+};
+
+static int epoll_event_fd_less(struct rb_node *a, const struct rb_node *b)
+{
+	struct epoll_node *ena;
+	struct epoll_node *enb;
+
+	ena = rb_entry_safe(a, struct epoll_node, node);
+	enb = rb_entry_safe(b, struct epoll_node, node);
+
+	if (ena->fd < enb->fd)
+		return 1;
+
+	return 0;
+}
+
+static int epoll_event_fd_cmp(const void *key, const struct rb_node *node)
+{
+	struct epoll_node *en;
+
+	en = rb_entry_safe(node, struct epoll_node, node);
+
+	return *(const int *)key - en->fd;
+}
+
+static struct epoll_node *epoll_event_find_fd(struct rb_root *root, int fd)
+{
+	struct rb_node *n;
+
+	n = rb_find(&fd, root, epoll_event_fd_cmp);
+	if (NULL == n)
+		return NULL;
+
+	return rb_entry_safe(n, struct epoll_node, node);
+}
 
 struct event_scheduler *epoll_create_scheduler()
 {
@@ -13,99 +58,154 @@ struct event_scheduler *epoll_create_scheduler()
 	es = mem_alloc(sizeof(*es));
 
 	es->epoll = epoll_create(EPOLL_MAX_EVENT);
+	es->tree = RB_ROOT;
 
 	return &es->scheduler;
 }
 
 static void epoll_process(
 	struct epoll_scheduler *es,
-	struct event *e,
+	struct epoll_node *en,
 	int op,
 	int events)
 {
 	struct epoll_event ee;
 
 	ee.events = events;
-	ee.data.ptr = e;
+	ee.data.ptr = en;
 
-	if (-1 == epoll_ctl(es->epoll, op, e->fd, &ee))
+	if (-1 == epoll_ctl(es->epoll, op, en->fd, &ee))
 		perror("epoll_ctl");
 }
 
-void epoll_set_read(struct event *e)
+int epoll_set_read(struct event *e)
 {
 	struct epoll_scheduler *es;
+	struct epoll_node *en;
 	int op;
 	int flags;
 
 	es = container_of(e->scheduler, struct epoll_scheduler, scheduler);
+	en = epoll_event_find_fd(&es->tree, e->fd);
 
-	if (event_find_write_of_fd(e->scheduler, e->fd)) {
+	if (en) {
+		assert(NULL == en->read);
+
 		op = EPOLL_CTL_MOD;
 		flags = EPOLLIN | EPOLLOUT;
 	} else {
+		en = mem_alloc(sizeof(*en));
+		if (NULL == en)
+			return -1;
+		en->fd = e->fd;
+		en->write = NULL;
+
 		op = EPOLL_CTL_ADD;
 		flags = EPOLLIN;
-	}
 
-	epoll_process(es, e, op, flags);
+		rb_add(&en->node, &es->tree, epoll_event_fd_less);
+	}
+	en->read = e;
+
+	epoll_process(es, en, op, flags);
+
+	return 0;
 }
 
-void epoll_set_write(struct event *e)
+int epoll_set_write(struct event *e)
 {
 	struct epoll_scheduler *es;
+	struct epoll_node *en;
 	int op;
 	int flags;
 
 	es = container_of(e->scheduler, struct epoll_scheduler, scheduler);
+	en = epoll_event_find_fd(&es->tree, e->fd);
 
-	if (event_find_read_of_fd(e->scheduler, e->fd)) {
+	if (en) {
+		assert(NULL == en->write);
+
 		op = EPOLL_CTL_MOD;
 		flags = EPOLLIN | EPOLLOUT;
 	} else {
+		en = mem_alloc(sizeof(*en));
+		if (NULL == en)
+			return -1;
+
+		en->fd = e->fd;
+		en->read = NULL;
 		op = EPOLL_CTL_ADD;
 		flags = EPOLLOUT;
-	}
 
-	epoll_process(es, e, op, flags);
+		rb_add(&en->node, &es->tree, epoll_event_fd_less);
+	}
+	en->write = e;
+
+	epoll_process(es, en, op, flags);
+
+	return 0;
 }
 
 void epoll_cancel_read(struct event *e)
 {
 	struct epoll_scheduler *es;
+	struct epoll_node *en;
 	int op;
 	int flags;
 
 	es = container_of(e->scheduler, struct epoll_scheduler, scheduler);
+	en = epoll_event_find_fd(&es->tree, e->fd);
 
-	if (event_find_write_of_fd(e->scheduler, e->fd)) {
+	if (en && en->write) {
 		op = EPOLL_CTL_MOD;
 		flags = EPOLLOUT;
-	} else {
+		en->read = NULL;
+	} else if (en) {
 		op = EPOLL_CTL_DEL;
 		flags = EPOLLIN;
+
+		rb_erase(&en->node, &es->tree);
+	} else {
+		assert(0);
+
+		return;
 	}
 
-	epoll_process(es, e, op, flags);
+	epoll_process(es, en, op, flags);
+
+	if (EPOLL_CTL_DEL == op)
+		mem_free(en);
 }
 
 void epoll_cancel_write(struct event *e)
 {
 	struct epoll_scheduler *es;
+	struct epoll_node *en;
 	int op;
 	int flags;
 
 	es = container_of(e->scheduler, struct epoll_scheduler, scheduler);
+	en = epoll_event_find_fd(&es->tree, e->fd);
 
-	if (event_find_read_of_fd(e->scheduler, e->fd)) {
+	if (en && en->read) {
 		op = EPOLL_CTL_MOD;
 		flags = EPOLLIN;
-	} else {
+		en->write = NULL;
+	} else if (en) {
 		op = EPOLL_CTL_DEL;
 		flags = EPOLLOUT;
+
+		rb_erase(&en->node, &es->tree);
+	} else {
+		assert(0);
+
+		return;
 	}
 
-	epoll_process(es, e, op, flags);
+	epoll_process(es, en, op, flags);
+
+	if (EPOLL_CTL_DEL == op)
+		mem_free(en);
 }
 
 int epoll_poll(struct event_scheduler *s, struct timeval *tv)
@@ -114,12 +214,12 @@ int epoll_poll(struct event_scheduler *s, struct timeval *tv)
 	struct epoll_event ee[EPOLL_MAX_EVENT];
 	int nr;
 	int i;
-	struct event *e;
+	struct epoll_node *en;
 
 	es = container_of(s, struct epoll_scheduler, scheduler);
 
 	nr = epoll_wait(es->epoll, ee, EPOLL_MAX_EVENT,
-			tv->tv_sec * 1000000 + tv->tv_usec / 1000);
+			tv->tv_sec * 1000 + tv->tv_usec / 1000);
 	if (nr < 0) {
 		perror("epoll_wait");
 
@@ -127,24 +227,30 @@ int epoll_poll(struct event_scheduler *s, struct timeval *tv)
 	}
 
 	for (i = 0; i < nr; i++) {
-		e = ee[i].data.ptr;
+		en = ee[i].data.ptr;
 
-		if (EVENT_READ == e->type) {
-			rb_erase_cached(&e->rb_node, &s->read);
-			if (event_find_write_of_fd(s, e->fd))
-				epoll_process(es, e, EPOLL_CTL_MOD, EPOLLOUT);
-			else
-				epoll_process(es, e, EPOLL_CTL_DEL, EPOLLIN);
-		} else {
-			rb_erase_cached(&e->rb_node, &s->write);
-			if (event_find_read_of_fd(s, e->fd))
-				epoll_process(es, e, EPOLL_CTL_MOD, EPOLLIN);
-			else
-				epoll_process(es, e, EPOLL_CTL_DEL, EPOLLOUT);
+		if (ee[i].events & EPOLLIN) {
+			list_del(&en->read->l_node);
+			list_add_tail(&en->read->l_node, &s->ready);
+			en->read->ready = 1;
+			en->read = NULL;
 		}
+		if (ee[i].events & EPOLLOUT) {
+			list_del(&en->write->l_node);
+			list_add_tail(&en->write->l_node, &s->ready);
+			en->write->ready = 1;
+			en->write = NULL;
+		}
+		assert(en->read == NULL || en->write == NULL);
+		if (en->read) {
+			epoll_process(es, en, EPOLL_CTL_MOD, EPOLLIN);
+		} else if (en->write) {
+			epoll_process(es, en, EPOLL_CTL_MOD, EPOLLOUT);
+		} else {
+			epoll_process(es, en, EPOLL_CTL_DEL, 0);
 
-		e->ready = 1;
-		list_add_tail(&e->l_node, &s->ready);
+			rb_erase(&en->node, &es->tree);
+		}
 	}
 
 	return nr;

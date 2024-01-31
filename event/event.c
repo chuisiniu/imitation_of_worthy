@@ -18,8 +18,8 @@
 
 struct event_mp_ops {
 	struct event_scheduler *(* create_scheduler)();
-	void (* set_write)(struct event *e);
-	void (* set_read)(struct event *e);
+	int (* set_write)(struct event *e);
+	int (* set_read)(struct event *e);
 	void (* cancel_write)(struct event *e);
 	void (* cancel_read)(struct event *e);
 	int (* poll)(struct event_scheduler *s, struct timeval *tv);
@@ -33,12 +33,12 @@ struct event_mp_ops {
 	.poll = epoll_poll,
 #endif
 #ifdef EVENT_MULTIPATH_SELECT
-		.create_scheduler = select_create_scheduler,
-		.set_write = select_set_write,
-		.set_read = select_set_read,
-		.cancel_write = select_cancel_write,
-		.cancel_read = select_cancel_read,
-		.poll = select_poll,
+	.create_scheduler = select_create_scheduler,
+	.set_write = select_set_write,
+	.set_read = select_set_read,
+	.cancel_write = select_cancel_write,
+	.cancel_read = select_cancel_read,
+	.poll = select_poll,
 #endif
 };
 
@@ -47,23 +47,6 @@ static inline int event_tv_less(const struct timeval *a, const struct timeval *b
 	if (a->tv_sec < b->tv_sec
 	    || (a->tv_sec == b->tv_sec
 	        && a->tv_usec < b->tv_usec))
-		return 1;
-
-	return 0;
-}
-
-static int event_fd_less(struct rb_node *a, const struct rb_node *b)
-{
-	struct event *ea;
-	struct event *eb;
-
-	ea = rb_entry_safe(a, struct event, rb_node);
-	eb = rb_entry_safe(b, struct event, rb_node);
-
-	assert(ea->type == EVENT_READ || ea->type == EVENT_WRITE);
-	assert(eb->type == EVENT_READ || eb->type == EVENT_WRITE);
-
-	if (ea->fd < eb->fd)
 		return 1;
 
 	return 0;
@@ -81,15 +64,6 @@ static int event_timer_less(struct rb_node *a, const struct rb_node *b)
 	assert(eb->type == EVENT_TIMER);
 
 	return event_tv_less(&ea->tv, &eb->tv);
-}
-
-static int event_fd_cmp(const void *key, const struct rb_node *node)
-{
-	struct event *e;
-
-	e = rb_entry_safe(node, struct event, rb_node);
-
-	return *(const int *)key - e->fd;
 }
 
 static inline struct event_mp_ops *event_get_mp_ops()
@@ -121,9 +95,8 @@ struct event_scheduler *event_create_scheduler()
 
 	result->timer = RB_ROOT_CACHED;
 
-	result->read = RB_ROOT_CACHED;
-	result->write = RB_ROOT_CACHED;
-
+	INIT_LIST_HEAD(&result->read);
+	INIT_LIST_HEAD(&result->write);
 	INIT_LIST_HEAD(&result->ready);
 
 	INIT_LIST_HEAD(&result->free);
@@ -169,8 +142,8 @@ struct event *event_add_io_with_name(
 	int (*handler)(struct event *),
 	void *arg, int fd,
 	enum event_event_type t,
-	void (* set_fn)(struct event *e),
-	struct rb_root_cached *tree,
+	int (* set_fn)(struct event *e),
+	struct list_head *head,
 	char *name)
 {
 	struct event *e;
@@ -186,8 +159,12 @@ struct event *event_add_io_with_name(
 	e->type = t;
 	e->fd = fd;
 
-	set_fn(e);
-	rb_add_cached(&e->rb_node, tree, event_fd_less);
+	if (0 != set_fn(e)) {
+		log_error("fail to set io event, name: %s, fd %d", name, fd);
+
+		return NULL;
+	}
+	list_add_tail(&e->l_node, head);
 
 	log_debug("add %s on %d", name, fd);
 
@@ -251,18 +228,12 @@ void event_cancel_event(struct event *e)
 
 		event_get_mp_ops()->cancel_write(e);
 
-		if (!e->ready)
-			root = &e->scheduler->write;
-
 		break;
 	case EVENT_READ:
 		log_debug("cancel read evnet, name: %s, fd: %d",
 		          e->name, e->fd);
 
 		event_get_mp_ops()->cancel_read(e);
-
-		if (!e->ready)
-			root = &e->scheduler->read;
 
 		break;
 	case EVENT_TIMER:
@@ -273,7 +244,7 @@ void event_cancel_event(struct event *e)
 
 		break;
 	default:
-		log_error("cancel invalid event type %d", e->type);;
+		log_error("cancel invalid event type %d", e->type);
 
 		break;
 	}
@@ -388,25 +359,4 @@ struct event *event_get_next(
 void event_handle_event(struct event *e)
 {
 	e->handler(e);
-}
-
-struct event *event_find_event_of_fd(struct rb_root *tree, int fd)
-{
-	struct rb_node *n;
-
-	n = rb_find(&fd, tree, event_fd_cmp);
-	if (NULL == n)
-		return NULL;
-
-	return rb_entry_safe(n ,struct event, rb_node);
-}
-
-struct event *event_find_read_of_fd(struct event_scheduler *scheduler, int fd)
-{
-	return event_find_event_of_fd(&scheduler->read.rb_root, fd);
-}
-
-struct event *event_find_write_of_fd(struct event_scheduler *scheduler, int fd)
-{
-	return event_find_event_of_fd(&scheduler->write.rb_root, fd);
 }

@@ -27,22 +27,26 @@ void select_set_fd(fd_set *set, int fd, char *name)
 	FD_SET(fd, set);
 }
 
-void select_set_read(struct event *e)
+int select_set_read(struct event *e)
 {
 	struct select_scheduler *ss;
 
 	ss = container_of(e->scheduler, struct select_scheduler, scheduler);
 
 	select_set_fd(&ss->read, e->fd, e->name);
+
+	return 0;
 }
 
-void select_set_write(struct event *e)
+int select_set_write(struct event *e)
 {
 	struct select_scheduler *ss;
 
 	ss = container_of(e->scheduler, struct select_scheduler, scheduler);
 
 	select_set_fd(&ss->write, e->fd, e->name);
+
+	return 0;
 }
 
 void select_cancel_read(struct event *e)
@@ -63,29 +67,23 @@ void select_cancel_write(struct event *e)
 	FD_CLR(e->fd, &ss->write);
 }
 
-int select_process_fd(struct rb_root_cached *l, fd_set *fdset, fd_set *poll_fdset)
+int select_process_fd(struct list_head *l, fd_set *fdset, fd_set *poll_fdset)
 {
-	struct rb_node *cur;
-	struct rb_node *next;
 	struct event *e;
+	struct event *tmp;
 	int n;
 
 	n = 0;
-	cur = rb_first_cached(l);
-	while (cur) {
-		next = rb_next(cur);
-		e = rb_entry_safe(cur, struct event, rb_node);
+	list_for_each_entry_safe(e, tmp, l, l_node){
 		if (FD_ISSET(e->fd, fdset)) {
 			FD_CLR(e->fd, poll_fdset);
 
-			rb_erase_cached(cur, l);
+			list_del(&e->l_node);
 			list_add_tail(&e->l_node, &e->scheduler->ready);
 
 			e->ready = 1;
 			n += 1;
 		}
-
-		cur = next;
 	}
 
 	return n;

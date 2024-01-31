@@ -16,8 +16,8 @@ struct event_scheduler {
 
 	struct rb_root_cached timer;
 
-	struct rb_root_cached read;
-	struct rb_root_cached write;
+	struct list_head read;
+	struct list_head write;
 
 	struct list_head ready;
 
@@ -86,8 +86,5 @@ struct event *event_get_next(struct event_scheduler *scheduler, struct event *);
 void event_handle_event(struct event *e);
 
 void event_cancel_event(struct event *e);
-
-struct event *event_find_read_of_fd(struct event_scheduler *scheduler, int fd);
-struct event *event_find_write_of_fd(struct event_scheduler *scheduler, int fd);
 
 #endif
