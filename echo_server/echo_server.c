@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <strings.h>
 
+#include "log.h"
 #include "network_funcs.h"
 #include "event.h"
 #include "echo_server.h"
@@ -92,6 +93,8 @@ int main(int argc, char **argv)
 	int listen_fd;
 	struct sockaddr_in saddr;
 	struct event e;
+
+	log_init(stdout, LOG_LV_DEBUG);
 
 	scheduler = event_create_scheduler();
 	if (NULL == scheduler) {
