@@ -24,7 +24,7 @@ struct event_scheduler *proxy_get_event_scheduler()
 
 int proxy_refresh_time(struct event *e)
 {
-	event_add_timer(e->scheduler, proxy_refresh_time, NULL, 5);
+	event_add_timer(e->scheduler, proxy_refresh_time, NULL, 2);
 
 	g_proxy_time = time(NULL);
 
@@ -37,7 +37,7 @@ int main(int argc, char **argv)
 	struct sockaddr_in saddr;
 	struct event e;
 
-	log_init(stdout, LOG_LV_INFO);
+	log_init(stdout ? stdout : stderr, LOG_LV_DEBUG);
 
 	g_proxy_event_scheduler = event_create_scheduler();
 	if (NULL == g_proxy_event_scheduler) {

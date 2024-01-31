@@ -60,7 +60,7 @@ void select_cancel_write(struct event *e)
 
 	ss = container_of(e->scheduler, struct select_scheduler, scheduler);
 
-	FD_CLR(e->fd, &ss->read);
+	FD_CLR(e->fd, &ss->write);
 }
 
 int select_process_fd(struct rb_root_cached *l, fd_set *fdset, fd_set *poll_fdset)

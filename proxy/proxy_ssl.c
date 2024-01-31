@@ -219,25 +219,26 @@ void proxy_unref_ps(struct proxy_state *ps)
 	          sockaddr_string2(&ps->sself), sockaddr_string3(&ps->svr),
 		  ps->ref);
 
-	if (0 == ps->ref) {
-		log_info("%s->%s %s->%s, free proxy state",
-		         sockaddr_string(&ps->cli),
-		         sockaddr_string1(&ps->cself),
-		         sockaddr_string2(&ps->sself),
-		         sockaddr_string3(&ps->svr));
+	if (0 < ps->ref)
+		return;
 
-		if (ps->client)
-			proxy_free_ssl_state(ps->client);
-		if (ps->cli_fd >= 0)
-			close(ps->cli_fd);
+	log_info("%s->%s %s->%s, cli_fd: %d, svr_fd: %d free state",
+	         sockaddr_string(&ps->cli), sockaddr_string1(&ps->cself),
+	         sockaddr_string2(&ps->sself), sockaddr_string3(&ps->svr),
+		 ps->cli_fd, ps->svr_fd);
 
-		if (ps->server)
-			proxy_free_ssl_state(ps->server);
-		if (ps->svr_fd >= 0)
-			close(ps->svr_fd);
+	if (ps->client)
+		proxy_free_ssl_state(ps->client);
+	if (ps->cli_fd >= 0)
+		close(ps->cli_fd);
 
-		mem_free(ps);
-	}
+	if (ps->server)
+		proxy_free_ssl_state(ps->server);
+	if (ps->svr_fd >= 0)
+		close(ps->svr_fd);
+
+	mem_free(ps);
+
 }
 
 void proxy_free_event(struct proxy_event *pe)
@@ -262,8 +263,12 @@ void proxy_free_ps(struct proxy_state *ps)
 	struct proxy_event *tmp;
 
 	list_for_each_entry_safe(pe, tmp, &ps->events, node) {
-		if (pe->e)
+		if (pe->e) {
+			log_info("cancel %s, event: %s %d %d", pe->what,
+				 pe->e->name, pe->e->type, pe->e->fd);
+
 			event_cancel_event(pe->e);
+		}
 		proxy_free_event(pe);
 	}
 
@@ -1716,14 +1721,6 @@ int proxy_peek_sni(struct proxy_state *ps)
 			goto FINISH;
 		}
 
-		if (0 != proxy_add_timeout(ps, PROXY_TIMEOUT, SSL_DIR_2S,
-					   proxy_timeout,
-					   "server_connect_timeout")) {
-			ret = -1;
-
-			goto FINISH;
-		}
-
 		return 0;
 	}
 
@@ -1905,7 +1902,7 @@ int proxy_process_connect_request(
 		}
 
 		if (0 != proxy_add_timeout(ps, PROXY_TIMEOUT, SSL_DIR_2C,
-		                           proxy_timeout, "client_timeout")) {
+		                           proxy_timeout, "timeout")) {
 			proxy_error_cli(ps, "wait connect request fail"
 			                    " to add timeout");
 
@@ -2013,7 +2010,7 @@ int proxy_accept_tcp_connect(struct event *e)
 		return -1;
 	}
 
-	log_info("accept, peer %s, fd %d", sockaddr_string(addr), fd);
+	log_info("%d accept, peer %s, fd %d", e->fd, sockaddr_string(addr), fd);
 
 	event_add_read(e->scheduler, proxy_receive_connect_request, addr, fd);
 
