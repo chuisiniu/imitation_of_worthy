@@ -1164,7 +1164,7 @@ int proxy_tcp_2_bio(int fd,
                     struct proxy_state *ps,
                     struct ssl_state *ss)
 {
-	char buf[2048];
+	char buf[RECV_BUF_LEN];
 	ssize_t rlen;
 	ssize_t wlen;
 
@@ -1780,7 +1780,7 @@ int proxy_parse_connect_request(
 	}
 
 	if (offset >= len) {
-		proxy_error_cli(ps, " no host in conn req, %*s", len, req);
+		proxy_error_cli(ps, " no host in conn req, %.*s", len, req);
 
 		return -1;
 	}
@@ -1798,7 +1798,7 @@ int proxy_parse_connect_request(
 		offset += 1;
 
 	if (*req != ':' && *req != ' ') {
-		proxy_error_cli(ps, "no port info in conn req, %*s", len, req);
+		proxy_error_cli(ps, "no port info in conn req, %.*s", len, req);
 
 		return -1;
 	}
@@ -1815,7 +1815,7 @@ int proxy_parse_connect_request(
 	ps->port[l] = '\0';
 
 	if (*req != ' ') {
-		proxy_error_cli(ps, "port too long in conn req, %*s", len, req);
+		proxy_error_cli(ps, "port too long in conn req, %.*s", len, req);
 
 		return -1;
 	}
@@ -1942,8 +1942,8 @@ int proxy_receive_connect_request(struct event *e)
 		return -1;
 	}
 
-	log_debug("connect request: %*s from %s",
-		  rlen - 1, buf, sockaddr_string(&src));
+	log_debug("connect request: %.*s from %s, rlen: %d",
+		  rlen - 1, buf, sockaddr_string(&src), rlen);
 
 	len = sizeof(addr);
 	if (0 != getsockname(e->fd, &addr, &len)) {
@@ -1973,6 +1973,17 @@ int proxy_receive_connect_request(struct event *e)
 	return proxy_process_connect_request(e, ps, buf, (int)rlen);
 }
 
+int proxy_connect_request_timeout(struct event *e)
+{
+	int fd;
+
+	fd = (int)(long)e->arg;
+
+	close(fd);
+
+	return 0;
+}
+
 int proxy_accept_tcp_connect(struct event *e)
 {
 	struct sockaddr *addr;
@@ -2000,6 +2011,8 @@ int proxy_accept_tcp_connect(struct event *e)
 	log_info("%d accept, peer %s, fd %d", e->fd, sockaddr_string(addr), fd);
 
 	event_add_read(e->scheduler, proxy_receive_connect_request, addr, fd);
+	event_add_timer(e->scheduler, proxy_connect_request_timeout,
+			(void *)(long)fd, PROXY_TIMEOUT);
 
 	return 0;
 }

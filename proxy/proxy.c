@@ -37,7 +37,7 @@ int main(int argc, char **argv)
 	struct sockaddr_in saddr;
 	struct event e;
 
-	log_init(stdout ? stdout : stderr, LOG_LV_DEBUG);
+	log_init(stdout ? stdout : stderr, LOG_LV_INFO);
 
 	g_proxy_event_scheduler = event_create_scheduler();
 	if (NULL == g_proxy_event_scheduler) {
