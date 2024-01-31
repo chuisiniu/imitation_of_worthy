@@ -51,12 +51,6 @@ struct proxy_opts {
 	EVP_PKEY *cakey;
 	EVP_PKEY *key;
 	STACK_OF(X509) *chain;
-#ifndef OPENSSL_NO_DH
-	DH *dh;  /* DH算法相关 */
-#endif /* !OPENSSL_NO_DH */
-#ifndef OPENSSL_NO_ECDH /* ECDH基于DH的秘钥交换算法相关 */
-	char *ecdhcurve;
-#endif /* !OPENSSL_NO_ECDH */
 };
 
 struct proxy_opts m_proxy_opts = {
@@ -65,12 +59,6 @@ struct proxy_opts m_proxy_opts = {
 	NULL,
 	NULL,
 	NULL,
-#ifndef OPENSSL_NO_DH
-	NULL,
-#endif /* !OPENSSL_NO_DH */
-#ifndef OPENSSL_NO_ECDH
-	NULL
-#endif /* !OPENSSL_NO_ECDH */
 };
 
 enum ssl_want {
@@ -1563,7 +1551,6 @@ int proxy_handshake_svr(struct proxy_state *ps)
 			break;
 		default:
 			goto ERROR;
-			break;
 		}
 
 		return 0;
