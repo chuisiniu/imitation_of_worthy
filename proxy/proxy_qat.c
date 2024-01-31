@@ -149,7 +149,7 @@ static int proxy_get_counter_ptr()
 	return 0;
 }
 
-void proxy_init_qat(struct event_scheduler* scheduler)
+void proxy_init_qat(struct event_scheduler *scheduler)
 {
 	g_qat_engine = ENGINE_by_id("qatengine");
 	if (NULL == g_qat_engine) {
