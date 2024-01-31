@@ -11,6 +11,13 @@
 #define LOG_BUF_LEN 4096
 #define LOG_LV_STR_MAX_LEN 6
 
+#define LOG_TIME_FMT "[%04d-%02d-%02d %02d:%02d:%02d]"
+
+#define LOG_DEBUG_FMT LOG_TIME_FMT" \033[32m[%*s]\033[0m %s\n"
+#define LOG_INFO_FMT LOG_TIME_FMT" \033[34m[%*s]\033[0m %s\n"
+#define LOG_ERROR_FMT LOG_TIME_FMT" \033[33m[%*s]\033[0m %s\n"
+#define LOG_FATAL_FMT LOG_TIME_FMT" \033[41m[%*s]\033[0m %s\n"
+
 const char *log_lv_e2s(enum log_lv lv)
 {
 	static const char *m_log_lv_str_array[] = {
@@ -44,6 +51,12 @@ void log_printf(enum log_lv lv, const char *fmt, ...)
 	time_t now;
 	struct tm tm;
 	struct logger *logger = &m_logger;
+	const char *fmts[] = {
+		LOG_DEBUG_FMT,
+		LOG_INFO_FMT,
+		LOG_ERROR_FMT,
+		LOG_FATAL_FMT
+	};
 
 	if (lv < logger->lv)
 		return;
@@ -55,7 +68,8 @@ void log_printf(enum log_lv lv, const char *fmt, ...)
 	time(&now);
 	gmtime_r(&now, &tm);
 
-	fprintf(logger->fp, "[%04d-%02d-%02d %02d:%02d:%02d] [%*s] %s\n",
+
+	fprintf(logger->fp, fmts[lv],
 	        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 	        tm.tm_hour, tm.tm_min, tm.tm_sec, LOG_LV_STR_MAX_LEN,
 	        log_lv_e2s(lv), buf);
