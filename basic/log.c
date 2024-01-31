@@ -61,6 +61,9 @@ void log_printf(enum log_lv lv, const char *fmt, ...)
 	if (lv < logger->lv)
 		return;
 
+	if (NULL == logger->fp)
+		logger->fp = stdout;
+
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
