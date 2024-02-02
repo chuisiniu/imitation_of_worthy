@@ -40,7 +40,7 @@ proxy_poll_qat_hw()
 static int proxy_poll_timer(struct event *e)
 {
 	g_qat_poll_timer = NULL;
-
+/*
 	if (*nr_asym_requests_in_flight + *nr_kdf_requests_in_flight
 	    + *nr_cipher_requests_in_flight + *nr_asym_mb_items_in_queue
 	    + *nr_kdf_mb_items_in_queue + *nr_sym_mb_items_in_queue > 0) {
@@ -48,7 +48,11 @@ static int proxy_poll_timer(struct event *e)
 			proxy_poll_qat_hw();
 		}
 	}
-
+*/
+	g_qat_poll_timer = event_add_timer_millisec(
+		e->scheduler, proxy_poll_timer, NULL, 10);
+	proxy_poll_qat_hw();
+/*
 	if (*nr_asym_requests_in_flight + *nr_kdf_requests_in_flight
 	    + *nr_cipher_requests_in_flight + *nr_asym_mb_items_in_queue
 	    + *nr_kdf_mb_items_in_queue + *nr_sym_mb_items_in_queue > 0) {
@@ -56,7 +60,7 @@ static int proxy_poll_timer(struct event *e)
 		g_qat_poll_timer = event_add_timer(
 			e->scheduler, proxy_poll_timer, NULL, 1);
 	}
-
+*/
 	return 0;
 }
 
@@ -149,39 +153,41 @@ static int proxy_get_counter_ptr()
 	return 0;
 }
 
-void proxy_init_qat(struct event_scheduler *scheduler)
+int proxy_init_qat(struct event_scheduler *scheduler)
 {
 	g_qat_engine = ENGINE_by_id("qatengine");
 	if (NULL == g_qat_engine) {
 		log_info("no qatengine");
 
-		return;
+		return -1;
 	}
 
-	if (!ENGINE_init(g_qat_engine)) {
-		log_info("fail to init qat engine");
+	proxy_get_counter_ptr();
+
+	if (!ENGINE_ctrl_cmd(g_qat_engine, "ENABLE_SW_FALLBACK",
+			     0, NULL, NULL, 0)) {
+		log_error("QAT Engine failed: ENABLE_SW_FALLBACK");
 
 		goto ERROR;
 	}
 
-	if (!ENGINE_set_default(g_qat_engine, ENGINE_METHOD_ALL)) {
+	if (!ENGINE_ctrl_cmd(g_qat_engine, "ENABLE_EXTERNAL_POLLING",
+			     0, NULL, NULL, 0)) {
+		log_error("QAT Engine: ENABLE_EXTERNAL_POLLING, %s",
+		          ERR_error_string(ERR_get_error(), NULL));
+
+		goto ERROR;
+	}
+
+	if (!ENGINE_set_default(g_qat_engine,
+				ENGINE_METHOD_ALL & (~ENGINE_METHOD_RSA))) {
 		log_info("ENGINE_set_default error");
 
 		goto ERROR;
 	}
 
-	proxy_get_counter_ptr();
-
-	if (!ENGINE_ctrl_cmd(g_qat_engine, "ENABLE_EVENT_DRIVEN_POLLING_MODE",
-			     0, NULL, NULL, 0)) {
-		log_error("QAT Engine failed: ENABLE_EVENT_DRIVEN_POLLING_MODE");
-
-		goto ERROR;
-	}
-
-	if (!ENGINE_ctrl_cmd(g_qat_engine, "ENABLE_HEURISTIC_POLLING",
-			     0, NULL, NULL, 0)) {
-		log_error("QAT Engine failed: ENABLE_HEURISTIC_POLLING");
+	if (!ENGINE_init(g_qat_engine)) {
+		log_info("fail to init qat engine");
 
 		goto ERROR;
 	}
@@ -191,11 +197,13 @@ void proxy_init_qat(struct event_scheduler *scheduler)
 
 	log_info("QAT Engine init ok");
 
-	return;
+	return 0;
 ERROR:
 	if (g_qat_engine) {
 		ENGINE_finish(g_qat_engine);
 		ENGINE_free(g_qat_engine);
 	}
 	g_qat_engine = NULL;
+
+	return -1;
 }

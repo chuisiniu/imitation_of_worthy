@@ -46,6 +46,7 @@ static BIO *m_peek_sni_ssl_in_bio;
 
 struct proxy_opts {
 	int peep;
+	int async;
 
 	X509 *cacrt;
 	EVP_PKEY *cakey;
@@ -55,6 +56,7 @@ struct proxy_opts {
 
 struct proxy_opts m_proxy_opts = {
 	1,
+	0,
 	NULL,
 	NULL,
 	NULL,
@@ -137,6 +139,9 @@ struct proxy_event {
 	struct event *e;
 	struct proxy_state *ps;
 	int (*handler)(struct proxy_state *);
+
+	int async;
+	struct event *async_other;
 
 	const char *what;
 };
@@ -257,6 +262,14 @@ void proxy_free_ps(struct proxy_state *ps)
 
 			event_cancel_event(pe->e);
 		}
+		if (pe->async && pe->async_other) {
+			log_info("cancel %s, event: %s %d %d", pe->what,
+			         pe->async_other->name,
+				 pe->async_other->type,
+				 pe->async_other->fd);
+
+			event_cancel_event(pe->async_other);
+		}
 		proxy_free_event(pe);
 	}
 
@@ -278,6 +291,8 @@ struct proxy_event *proxy_get_event(
 	pe->handler = handler;
 	pe->e = NULL;
 	pe->what = what;
+	pe->async = 0;
+	pe->async_other = NULL;
 	list_add(&pe->node, &ps->events);
 	proxy_ref_ps(ps);
 
@@ -299,6 +314,15 @@ int proxy_event_handler(struct event *e)
 	          sockaddr_string(&ps->cli), sockaddr_string1(&ps->cself),
 	          sockaddr_string2(&ps->sself), sockaddr_string3(&ps->svr),
 		  e->fd, pe->what);
+	if (pe->async) {
+		if (e->type == EVENT_READ && pe->async_other) {
+			event_cancel_event(pe->async_other);
+			pe->async_other = NULL;
+		} else if (e->type == EVENT_WRITE && pe->e) {
+			event_cancel_event(pe->e);
+			pe->e = NULL;
+		}
+	}
 	proxy_free_event(pe);
 
 	ret = handler(ps);
@@ -323,8 +347,7 @@ int proxy_add_read(
 
 	pe = proxy_get_event(ps, handler, what);
 	if (NULL == pe) {
-		proxy_log(ps, dir, LOG_LV_ERROR,
-			  "fail to get event when add read %s on %d",
+		proxy_error(ps, dir, "fail to get event when add read %s on %d",
 			  what, fd);
 
 		proxy_free_ps(ps);
@@ -332,19 +355,19 @@ int proxy_add_read(
 		return -1;
 	}
 
+	pe->async = 0;
+	pe->async_other = NULL;
 	es = proxy_get_event_scheduler();
 	pe->e = event_add_read(es, proxy_event_handler, pe, fd);
 	if (NULL == pe->e) {
-		proxy_log(ps, dir, LOG_LV_ERROR,
-		          "fail to add read %s on %d",
-			  what, fd);
+		proxy_error(ps, dir, "fail to add read %s on %d", what, fd);
 
 		proxy_free_ps(ps);
 
 		return -1;
 	}
 
-	proxy_log(ps, dir, LOG_LV_INFO, "add read %s on %d", what, fd);
+	proxy_info(ps, dir, "add read %s on %d", what, fd);
 
 	return 0;
 }
@@ -375,6 +398,8 @@ int proxy_add_write(
 		return -1;
 	}
 
+	pe->async = 0;
+	pe->async_other = NULL;
 	es = proxy_get_event_scheduler();
 	pe->e = event_add_write(es, proxy_event_handler, pe, fd);
 	if (NULL == pe->e) {
@@ -388,6 +413,84 @@ int proxy_add_write(
 	}
 
 	proxy_log(ps, dir, LOG_LV_DEBUG, "add write %s on %d", what, fd);
+
+	return 0;
+}
+
+int proxy_process_async(
+	struct proxy_state *ps,
+	enum ssl_dir dir,
+	int (*handler)(struct proxy_state *),
+	const char *what)
+{
+	OSSL_ASYNC_FD *add_fds;
+	size_t nr_add;
+	struct ssl_state *ss;
+	size_t i;
+	struct proxy_event *pe;
+	struct event_scheduler *es;
+
+	if (dir == SSL_DIR_2C)
+		ps->cli_active = g_proxy_time;
+	else
+		ps->svr_active = g_proxy_time;
+
+	proxy_debug(ps, dir, "proxy_process_async");
+
+	add_fds = NULL;
+
+	ss = SSL_DIR_2C == dir ? ps->client : ps->server;
+	SSL_get_all_async_fds(ss->ssl, NULL, &nr_add);
+	if (0 == nr_add)
+		return 0;
+
+	add_fds = mem_alloc(nr_add * sizeof(OSSL_ASYNC_FD));
+	if (NULL == add_fds) {
+		proxy_error(ps, dir, "no memory, add async");
+		proxy_free_ps(ps);
+
+		return -1;
+	}
+	SSL_get_all_async_fds(ss->ssl, add_fds, &nr_add);
+
+	for (i = 0; i < nr_add; i++) {
+		pe = proxy_get_event(ps, handler, what);
+		if (NULL == pe) {
+			proxy_error(ps, dir, "fail to get event when add async %s",
+			            what);
+
+			mem_free(add_fds);
+			proxy_free_ps(ps);
+
+			return -1;
+		}
+
+		pe->async = 1;
+		es = proxy_get_event_scheduler();
+		pe->e = event_add_read(es, proxy_event_handler, pe, add_fds[i]);
+		if (NULL == pe->e) {
+			proxy_error(ps, dir, "fail to add read %s on %d",
+				    what, add_fds[i]);
+
+			mem_free(add_fds);
+			proxy_free_ps(ps);
+
+			return -1;
+		}
+		pe->async_other = event_add_write(es, proxy_event_handler, pe, add_fds[i]);
+		if (NULL == pe->e) {
+			proxy_error(ps, dir, "fail to add read %s on %d",
+				    what, add_fds[i]);
+
+			mem_free(add_fds);
+			proxy_free_ps(ps);
+
+			return -1;
+		}
+
+		proxy_info(ps, dir, "add sync %s on %d", what, add_fds[i]);
+	}
+	mem_free(add_fds);
 
 	return 0;
 }
@@ -959,6 +1062,8 @@ struct ssl_state *proxy_create_cli_ssl_state(struct proxy_state *ps)
 	SSL_set_mode(ss->ssl,
 	             SSL_get_mode(ss->ssl) | SSL_MODE_RELEASE_BUFFERS);
 #endif /* SSL_MODE_RELEASE_BUFFERS */
+	if (m_proxy_opts.async)
+		SSL_set_mode(ss->ssl, SSL_MODE_ASYNC);
 
 	SSL_set_app_data(ss->ssl, ps);
 
@@ -1049,6 +1154,9 @@ struct ssl_state *proxy_create_svr_ssl_state(const char *sni)
 	/* lower memory footprint for idle connections */
 	SSL_set_mode(ss->ssl, SSL_get_mode(ss->ssl) | SSL_MODE_RELEASE_BUFFERS);
 #endif /* SSL_MODE_RELEASE_BUFFERS */
+
+	if (m_proxy_opts.async)
+		SSL_set_mode(ss->ssl, SSL_MODE_ASYNC);
 
 	ss->ssl_bio = BIO_new(BIO_f_ssl());
 	if (!ss->ssl_bio) {
@@ -1191,12 +1299,6 @@ void proxy_process_ssl_error(
 {
 	switch (SSL_get_error(ss->ssl, ssl_ret)) {
 	case SSL_ERROR_WANT_READ:
-		log_info("%s->%s %s->%s dir %d, ssl want read.",
-		         sockaddr_string(&ps->cli),
-		         sockaddr_string1(&ps->cself),
-		         sockaddr_string2(&ps->sself),
-		         sockaddr_string2(&ps->svr), ss->dir);
-
 		// 两种情况：
 		// 1. openssl处理完了对端的输入，把要响应的报文写到了out_bio，它想要
 		//    读对端看到out_bio中的内容的响应
@@ -1206,32 +1308,29 @@ void proxy_process_ssl_error(
 			ss->want = SSL_WANT_WRITE;
 		else
 			ss->want = SSL_WANT_READ;
+
+		proxy_info(ps, ss->dir, "ssl error want read, want %d",
+			   ss->want);
+
 		break;
 	case SSL_ERROR_WANT_WRITE:
-		log_info("%s->%s %s->%s dir %d, ssl want write.",
-		         sockaddr_string(&ps->cli),
-		         sockaddr_string1(&ps->cself),
-		         sockaddr_string2(&ps->sself),
-		         sockaddr_string2(&ps->svr), ss->dir);
 		// 一般应该不会出现这种情况，因为out_bio是BIO_s_mem，可以直接写入，除
 		// 非写满了的情况
 		ss->want = SSL_WANT_WRITE;
+
+		proxy_info(ps, ss->dir, "ssl error want write, want %d",
+			   ss->want);
+
 		break;
 	case SSL_ERROR_WANT_ASYNC:
-		log_info("%s->%s %s->%s dir %d, ssl want async.",
-		         sockaddr_string(&ps->cli),
-		         sockaddr_string1(&ps->cself),
-		         sockaddr_string2(&ps->sself),
-		         sockaddr_string2(&ps->svr), ss->dir);
 		ss->want = SSL_WANT_ASYNC;
+
+		proxy_info(ps, ss->dir, "ssl error want async, want %d",
+			   ss->want);
+
 		break;
 	default:
-		log_error("%s->%s %s->%s dir %d, ssl error: %s.",
-		          sockaddr_string(&ps->cli),
-		          sockaddr_string1(&ps->cself),
-		          sockaddr_string2(&ps->sself),
-		          sockaddr_string2(&ps->svr), ss->dir,
-		          PROXY_SSL_ERROR);
+		proxy_error(ps, ss->dir, "ssl error: %s", PROXY_SSL_ERROR);
 		ss->need_finish = 1;
 		break;
 	}
@@ -1289,7 +1388,7 @@ int proxy_connect(struct sockaddr *addr, socklen_t len, int *again)
 
 int proxy_start_handshake_client(struct proxy_state *ps)
 {
-	proxy_info(ps, SSL_DIR_2C, "start handshake clinet");
+	proxy_info(ps, SSL_DIR_2C, "start handshake client");
 
 	ps->server->crt = SSL_get_peer_certificate(ps->server->ssl);
 	if (NULL == ps->server->crt) {
@@ -1337,7 +1436,7 @@ int proxy_wait_server_response(struct proxy_state *ps)
 	while (BIO_ctrl_pending(ss->ssl_bio)) {
 		rlen = BIO_read(ss->ssl_bio, buf, sizeof(buf));
 		buf[rlen] = '\0';
-		log_debug("receive %s, rlen: %d", buf, rlen);
+		log_debug("receive %.*s, rlen: %d", rlen, buf, rlen);
 		wlen = BIO_write(ps->client->ssl_bio, buf, rlen);
 		if (wlen < rlen) {
 			// TODO
@@ -1365,7 +1464,7 @@ int proxy_cli_plain_2_svr(struct proxy_state *ps)
 
 	rlen = BIO_read(cli->ssl_bio, buf, sizeof(buf));
 	buf[rlen] = '\0';
-	log_debug("receive %s, rlen: %d", buf, rlen);
+	log_debug("receive %.*s, rlen: %d", rlen, buf, rlen);
 	wlen = BIO_write(svr->ssl_bio, buf, rlen);
 	if (wlen < rlen) {
 		// TODO
@@ -1410,6 +1509,28 @@ ERROR:
 	return ret;
 }
 
+
+int proxy_handshake_async(struct proxy_state *ps, struct ssl_state *ss)
+{
+	int ret;
+
+	ret = SSL_do_handshake(ss->ssl);
+	if (1 == ret) {
+		ss->want = SSL_ERROR_WANT_WRITE;
+		ss->handshaked = 1;
+
+		return 0;
+	}
+	proxy_process_ssl_error(ret, ps, ss);
+
+	proxy_debug(ps, ss->dir, "handshake async finish");
+	if (ss->need_finish)
+		return -1;
+
+	return 0;
+}
+
+
 int proxy_handshake_cli(struct proxy_state *ps)
 {
 	struct ssl_state *ss;
@@ -1417,11 +1538,18 @@ int proxy_handshake_cli(struct proxy_state *ps)
 	ss = ps->client;
 	switch (ss->want) {
 	case SSL_WANT_READ:
+		proxy_info_svr(ps, "proxy_handshake_cli want read");
 		proxy_handshake_read(ps->cli_fd, ps, ss);
 
 		break;
 	case SSL_WANT_WRITE:
+		proxy_info_svr(ps, "proxy_handshake_cli want async");
 		proxy_handshake_write(ps->cli_fd, ps, ss);
+
+		break;
+	case SSL_WANT_ASYNC:
+		proxy_info_svr(ps, "proxy_handshake_cli want async");
+		proxy_handshake_async(ps, ss);
 
 		break;
 	default:
@@ -1469,7 +1597,7 @@ int proxy_handshake_cli(struct proxy_state *ps)
 	case SSL_WANT_READ:
 		if (-1 == proxy_add_read(ps, ps->cli_fd, SSL_DIR_2C,
 		                         proxy_handshake_cli,
-		                         "handshake client")) {
+		                         "proxy_handshake_cli")) {
 			proxy_error_cli(ps, "fail to add handshake cli read");
 
 			goto ERROR;
@@ -1478,12 +1606,16 @@ int proxy_handshake_cli(struct proxy_state *ps)
 	case SSL_WANT_WRITE:
 		if (-1 == proxy_add_write(ps, ps->cli_fd, SSL_DIR_2C,
 		                          proxy_handshake_cli,
-		                          "handshake client")) {
+		                          "proxy_handshake_cli")) {
 			proxy_error_cli(ps, "fail to add handshake cli write");
 
 			goto ERROR;
 		}
 		break;
+	case SSL_WANT_ASYNC:
+		if (-1 == proxy_process_async(ps, SSL_DIR_2C,
+					      proxy_handshake_cli,
+					      "proxy_handshake_cli"))
 	default:
 		proxy_error_cli(ps, "fail to add handshake cli write");
 		// TODO 异步
@@ -1503,14 +1635,24 @@ int proxy_handshake_svr(struct proxy_state *ps)
 
 	switch (ss->want) {
 	case SSL_WANT_READ:
+		proxy_info_svr(ps, "proxy_handshake_svr want read");
+
 		proxy_handshake_read(ps->svr_fd, ps, ss);
 
 		break;
 	case SSL_WANT_WRITE:
+		proxy_info_svr(ps, "proxy_handshake_svr want write");
 		proxy_handshake_write(ps->svr_fd, ps, ss);
 
 		break;
+	case SSL_WANT_ASYNC:
+		proxy_info_svr(ps, "proxy_handshake_svr want async");
+		proxy_handshake_async(ps, ss);
+
+		break;
 	default:
+		proxy_error_svr(ps, "invalid want %d", ss->want);
+
 		goto ERROR;
 	}
 
@@ -1549,6 +1691,13 @@ int proxy_handshake_svr(struct proxy_state *ps)
 				goto ERROR;
 			}
 			break;
+		case SSL_WANT_ASYNC:
+			if (-1 == proxy_process_async(
+				ps, SSL_DIR_2S, proxy_handshake_cli,
+				"proxy_handshake_cli")) {
+				goto ERROR;
+			}
+			break;
 		default:
 			goto ERROR;
 		}
@@ -1557,26 +1706,35 @@ int proxy_handshake_svr(struct proxy_state *ps)
 	}
 
 	proxy_info_svr(ps, "server handshaking");
-	if (SSL_WANT_READ == ss->want) {
+	switch (ss->want) {
+	case SSL_WANT_READ:
 		if (-1 == proxy_add_read(
 			ps, ps->svr_fd, SSL_DIR_2S,
 			proxy_handshake_svr,
-			"handshake_server")) {
+			"proxy_handshake_svr")) {
 			goto ERROR;
 		}
-	} else if (SSL_WANT_WRITE == ss->want) {
+		break;
+	case SSL_WANT_WRITE:
 		if (-1 == proxy_add_write(
 			ps, ps->svr_fd, SSL_DIR_2S,
 			proxy_handshake_svr,
-			"handshake_server")) {
+			"proxy_handshake_svr")) {
 			goto ERROR;
 		}
-	} else {
+		break;
+	case SSL_WANT_ASYNC:
+		if (-1 == proxy_process_async(
+			ps, SSL_DIR_2S, proxy_handshake_svr,
+			"proxy_handshake_svr")) {
+			goto ERROR;
+		}
+		break;
+	default:
 		proxy_free_ps(ps);
-		goto ERROR;
-		// TODO 异步 或 出错
-	}
 
+		goto ERROR;
+	}
 
 	return 0;
 ERROR:
@@ -1604,18 +1762,7 @@ int proxy_start_handshake_server(struct proxy_state *ps)
 	}
 
 	ret = SSL_do_handshake(ps->server->ssl);
-	if (SSL_ERROR_WANT_READ != SSL_get_error(ps->server->ssl, ret)) {
-		proxy_error_svr(ps, "SSL_do_handshake %s", PROXY_SSL_ERROR);
-
-		return -1;
-	}
-
-	proxy_handshake_write(ps->svr_fd, ps, ps->server);
-	if (ps->server->need_finish) {
-		proxy_info_svr(ps, "fail to write client hello to server");
-
-		return -1;
-	}
+	proxy_process_ssl_error(ret, ps, ps->server);
 
 	return 0;
 }
@@ -1631,9 +1778,19 @@ int proxy_wait_server_connect(struct proxy_state *ps)
 		return -1;
 	}
 
-	if (-1 == proxy_add_read(ps, ps->svr_fd, SSL_DIR_2S,
-				 proxy_handshake_svr, "handshake_server")) {
-		return -1;
+	switch(ps->server->want) {
+	case SSL_WANT_ASYNC:
+		return proxy_process_async(
+			ps, SSL_DIR_2S, proxy_handshake_svr,
+			"proxy_handshake_svr");
+	case SSL_WANT_READ:
+	case SSL_WANT_WRITE:
+		return proxy_add_write(
+			ps, ps->svr_fd, SSL_DIR_2S, proxy_handshake_svr,
+			"proxy_handshake_svr");
+	default:
+		// TODO
+		break;
 	}
 
 	return 0;
@@ -1676,6 +1833,7 @@ int proxy_peek_sni(struct proxy_state *ps)
 		goto FINISH;
 	}
 
+	// TODO async
 	ssl = m_peek_sni_ssl;
 	SSL_clear(ssl);
 	BIO_write(m_peek_sni_ssl_in_bio, buf, rlen);
@@ -1741,6 +1899,10 @@ int proxy_peek_sni(struct proxy_state *ps)
 
 		break;
 	case SSL_WANT_ASYNC:
+		return proxy_process_async(
+			ps, SSL_DIR_2S, proxy_handshake_svr,
+			"proxy_handshake_svr");
+
 		// TODO
 	default:
 		ret = -1;
@@ -2031,7 +2193,11 @@ void proxy_init_ssl(struct event_scheduler *es, int listen)
 
 	ENGINE_load_dynamic();
 
-	proxy_init_qat(es);
+	if (0 == proxy_init_qat(es)) {
+		log_debug("support async");
+
+		m_proxy_opts.async = 1;
+	}
 
 	proxy_init_self_ssl_ctx(PROXY_SELF_CERT_KEY_PATH,
 				PROXY_SELF_CERT_PATH,
