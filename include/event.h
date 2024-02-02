@@ -64,6 +64,11 @@ struct event *event_add_timer_with_name(
 	int (*handler)(struct event *),
 	void *arg, int sec, char *name);
 
+struct event *event_add_timer_millisec_with_name(
+	struct event_scheduler *scheduler,
+	int (*handler)(struct event *),
+	void *arg, int millisecond, char *name);
+
 #define event_add_read(_scheduler_, _handler_, _arg_, _fd_) \
 	event_add_read_with_name( \
 		_scheduler_, _handler_, _arg_, _fd_, \
@@ -77,6 +82,11 @@ struct event *event_add_timer_with_name(
 #define event_add_timer(_scheduler_, _handler_, _arg_, _sec_) \
 	event_add_timer_with_name( \
 		_scheduler_, _handler_, _arg_, _sec_, \
+		#_handler_)
+
+#define event_add_timer_millisec(_scheduler_, _handler_, _arg_, _msec_) \
+	event_add_timer_millisec_with_name( \
+		_scheduler_, _handler_, _arg_, _msec_, \
 		#_handler_)
 
 struct event_scheduler *event_create_scheduler();

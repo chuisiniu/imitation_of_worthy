@@ -201,7 +201,7 @@ struct event *event_add_timer_with_name(
 	e = event_get_free_event(scheduler, EVENT_TIMER, handler, arg, name);
 	if (NULL == e) {
 		log_error("fail to get free event when add timer event, "
-		          "name: %s, sec %d", name, sec);
+		          "name: %s, sec: %d", name, sec);
 
 		return NULL;
 	}
@@ -212,6 +212,32 @@ struct event *event_add_timer_with_name(
 	rb_add_cached(&e->rb_node, &scheduler->timer, event_timer_less);
 
 	log_debug("add %s after %d seconds", name, sec);
+
+	return e;
+}
+
+struct event *event_add_timer_millisec_with_name(
+	struct event_scheduler *scheduler,
+	int (*handler)(struct event *),
+	void *arg, int millisecond, char *name)
+{
+	struct event *e;
+
+	e = event_get_free_event(scheduler, EVENT_TIMER, handler, arg, name);
+	if (NULL == e) {
+		log_error("fail to get free event when add timer event, "
+		          "name: %s, millisecond %d", name, millisecond);
+
+		return NULL;
+	}
+
+	event_get_timeval(&e->tv);
+	e->tv.tv_sec += millisecond / 1000;
+	e->tv.tv_usec += 1000 * (millisecond % 1000);
+
+	rb_add_cached(&e->rb_node, &scheduler->timer, event_timer_less);
+
+	// log_debug("add %s after %d milliseconds", name, millisecond);
 
 	return e;
 }
@@ -308,7 +334,7 @@ int event_process_timer(struct event_scheduler *scheduler)
 	                 && e->tv.tv_usec == now.tv_usec))) {
 		rb_erase_cached(&e->rb_node, &scheduler->timer);
 
-		log_debug("timer %s is ready", e->name);
+		// log_debug("timer %s is ready", e->name);
 
 		e->ready = 1;
 		list_add_tail(&e->l_node, &scheduler->ready);
@@ -339,8 +365,9 @@ struct event *event_get_next(
 			list_del(&e->l_node);
 			list_add(&e->l_node, &scheduler->free);
 
-			log_debug("get event, type %d, name %s",
-				  next->type, next->name);
+			if (e->type != EVENT_TIMER)
+				log_debug("get event, type %d, name %s",
+				          next->type, next->name);
 
 			return next;
 		}
