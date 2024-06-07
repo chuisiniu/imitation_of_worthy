@@ -22,7 +22,8 @@ subdir('basic')
 subdir('event')
 subdir('echo_server')
 subdir('test')
-subdir('proxy')
+subdir('game')
+# subdir('proxy')
 
 configure_file(
     output: 'config.h',
