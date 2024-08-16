@@ -24,7 +24,7 @@ struct bm *bm_create_fix(int max_bit, struct mem_func_set *mem_f);
 void bm_destroy(struct bm *b);
 void bm_unset(struct bm *b, uint32_t n);
 void bm_zero(struct bm *b);
-void bm_clean(struct bm *b);
+
 int bm_test(struct bm *b, uint32_t n);
 int bm_set(struct bm *b, uint32_t n);
 int bm_is_empty(const struct bm *b);

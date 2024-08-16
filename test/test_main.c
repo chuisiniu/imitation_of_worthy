@@ -5,6 +5,7 @@ extern int register_rb_tree_test();
 extern int register_dictree_test();
 extern int register_bm_test();
 extern int register_bs_test();
+extern int register_bsbm_test();
 
 int main()
 {
@@ -19,6 +20,7 @@ int main()
 	register_dictree_test();
 	register_bm_test();
 	register_bs_test();
+	register_bsbm_test();
 
 	/* Run all tests using the CUnit Basic interface */
 	CU_basic_set_mode(CU_BRM_VERBOSE);

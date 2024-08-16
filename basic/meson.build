@@ -5,5 +5,7 @@ basic_lib = library('basic',
 			   'network_funcs.c',
 			   'rbtree.c',
 			   'bm.c',
-			   'bs.c']),
+			   'bs.c',
+			   'bsbm.c'
+			  ]),
 		include_directories: global_inc)
