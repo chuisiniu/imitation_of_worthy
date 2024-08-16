@@ -3,5 +3,7 @@ basic_lib = library('basic',
 			   'log.c',
 			   'memhook.c',
 			   'network_funcs.c',
-			   'rbtree.c']),
+			   'rbtree.c',
+			   'bm.c',
+			   'bs.c']),
 		include_directories: global_inc)

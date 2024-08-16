@@ -103,6 +103,12 @@ void proxy_poll_qat(struct event_scheduler *es)
 	}
 }
 
+/*
+ * 获取到qatengine中记录硬件正在处理的请求的个数，用于启发式POLL硬件，启发式POLL硬件
+ * 会在发现硬件完成了异步操作的时候POLL硬件，nr_ssl_connection 记录当前我们下发过的异步
+ * 操作的个数，当下面获取到的这几个记数器的和小于nr_ssl_connection时，就说明有异步请求
+ * 处理完了，需要POLL硬件了。
+ * */
 static int proxy_get_counter_ptr()
 {
 	if (!ENGINE_ctrl_cmd(g_qat_engine, "GET_NUM_REQUESTS_IN_FLIGHT",
@@ -112,7 +118,6 @@ static int proxy_get_counter_ptr()
 
 		return -1;
 	}
-
 	if (!ENGINE_ctrl_cmd(g_qat_engine, "GET_NUM_REQUESTS_IN_FLIGHT",
 	                     GET_NUM_KDF_REQUESTS_IN_FLIGHT,
 	                     &nr_kdf_requests_in_flight, NULL, 0)) {
@@ -120,7 +125,6 @@ static int proxy_get_counter_ptr()
 
 		return -1;
 	}
-
 	if (!ENGINE_ctrl_cmd(g_qat_engine, "GET_NUM_REQUESTS_IN_FLIGHT",
 	                     GET_NUM_CIPHER_PIPELINE_REQUESTS_IN_FLIGHT,
 	                     &nr_cipher_requests_in_flight, NULL, 0)) {
@@ -153,6 +157,17 @@ static int proxy_get_counter_ptr()
 	return 0;
 }
 
+/*
+ * OpenSSL关于ENGINE的文档可以看
+ * https://www.openssl.org/docs/man1.0.2/man3/engine.html
+ *
+ * 初始化qatengine
+ * - 使用ENGINE_by_id获取到qatengine的structural reference
+ * - 通过ENGINE_ctrl_cmd配置硬件
+ * - 使用ENGINE_set_default让openssl把qatengine作为默认engine
+ * - 调用ENGINE_init获取到qatengine的functional reference
+ * - 添加poll硬件的定时器
+ * */
 int proxy_init_qat(struct event_scheduler *scheduler)
 {
 	g_qat_engine = ENGINE_by_id("qatengine");
@@ -172,15 +187,22 @@ int proxy_init_qat(struct event_scheduler *scheduler)
 	}
 
 	if (!ENGINE_ctrl_cmd(g_qat_engine, "ENABLE_EXTERNAL_POLLING",
-			     0, NULL, NULL, 0)) {
+	                     0, NULL, NULL, 0)) {
 		log_error("QAT Engine: ENABLE_EXTERNAL_POLLING, %s",
+		          ERR_error_string(ERR_get_error(), NULL));
+
+		goto ERROR;
+	}
+	if (!ENGINE_ctrl_cmd(g_qat_engine, "ENABLE_HEURISTIC_POLLING",
+	                     0, NULL, NULL, 0)) {
+		log_error("QAT Engine: ENABLE_HEURISTIC_POLLING, %s",
 		          ERR_error_string(ERR_get_error(), NULL));
 
 		goto ERROR;
 	}
 
 	if (!ENGINE_set_default(g_qat_engine,
-				ENGINE_METHOD_ALL & (~ENGINE_METHOD_RSA))) {
+				ENGINE_METHOD_ALL)) {
 		log_info("ENGINE_set_default error");
 
 		goto ERROR;

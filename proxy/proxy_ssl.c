@@ -36,6 +36,7 @@
 #define PROXY_SSL_ERROR ERR_error_string(ERR_get_error(), NULL)
 
 extern struct event_scheduler *proxy_get_event_scheduler();
+
 extern time_t g_proxy_time;
 
 volatile int nr_ssl_connection = 0;
@@ -91,20 +92,20 @@ struct ssl_state {
 
 #define proxy_log(_ps, _dir, _lv, _fmt, arg...)                            \
 do {                                                                       \
-	if (SSL_DIR_2C == (_dir))                                          \
-		log_printf(_lv, "(%s->%s) %s->%s fd %d ref %d "_fmt,       \
-		           sockaddr_string(&(_ps)->cli),                   \
-		           sockaddr_string1(&(_ps)->cself),                \
-		           sockaddr_string2(&(_ps)->sself),                \
-		           sockaddr_string3(&(_ps)->svr),                  \
-			   (_ps)->cli_fd, (_ps)->ref, ##arg);              \
-	else                                                               \
-		log_printf(_lv, "%s->%s (%s->%s) fd %d ref %d "_fmt,       \
-		           sockaddr_string(&(_ps)->cli),                   \
-		           sockaddr_string1(&(_ps)->cself),                \
-		           sockaddr_string2(&(_ps)->sself),                \
-		           sockaddr_string3(&(_ps)->svr),                  \
-			   (_ps)->cli_fd, (_ps)->ref, ##arg);              \
+        if (SSL_DIR_2C == (_dir))                                          \
+                log_printf(_lv, "(%s->%s) %s->%s fd %d ref %d "_fmt,       \
+                           sockaddr_string(&(_ps)->cli),                   \
+                           sockaddr_string1(&(_ps)->cself),                \
+                           sockaddr_string2(&(_ps)->sself),                \
+                           sockaddr_string3(&(_ps)->svr),                  \
+                           (_ps)->cli_fd, (_ps)->ref, ##arg);              \
+        else                                                               \
+                log_printf(_lv, "%s->%s (%s->%s) fd %d ref %d "_fmt,       \
+                           sockaddr_string(&(_ps)->cli),                   \
+                           sockaddr_string1(&(_ps)->cself),                \
+                           sockaddr_string2(&(_ps)->sself),                \
+                           sockaddr_string3(&(_ps)->svr),                  \
+                           (_ps)->cli_fd, (_ps)->ref, ##arg);              \
 } while(0)
 
 #define proxy_debug(_ps, _dir, _fmt, arg...) \
@@ -138,6 +139,7 @@ struct proxy_event {
 	struct list_head node;
 	struct event *e;
 	struct proxy_state *ps;
+
 	int (*handler)(struct proxy_state *);
 
 	int async;
@@ -210,7 +212,7 @@ void proxy_unref_ps(struct proxy_state *ps)
 	log_debug("%s->%s %s->%s, ref: %d",
 	          sockaddr_string(&ps->cli), sockaddr_string1(&ps->cself),
 	          sockaddr_string2(&ps->sself), sockaddr_string3(&ps->svr),
-		  ps->ref);
+	          ps->ref);
 
 	if (0 < ps->ref)
 		return;
@@ -218,7 +220,7 @@ void proxy_unref_ps(struct proxy_state *ps)
 	log_info("%s->%s %s->%s, cli_fd: %d, svr_fd: %d free state",
 	         sockaddr_string(&ps->cli), sockaddr_string1(&ps->cself),
 	         sockaddr_string2(&ps->sself), sockaddr_string3(&ps->svr),
-		 ps->cli_fd, ps->svr_fd);
+	         ps->cli_fd, ps->svr_fd);
 
 	if (ps->client)
 		proxy_free_ssl_state(ps->client);
@@ -241,7 +243,7 @@ void proxy_free_event(struct proxy_event *pe)
 	          sockaddr_string1(&pe->ps->cself),
 	          sockaddr_string2(&pe->ps->sself),
 	          sockaddr_string3(&pe->ps->svr),
-		  pe->what);
+	          pe->what);
 
 	proxy_unref_ps(pe->ps);
 
@@ -258,15 +260,15 @@ void proxy_free_ps(struct proxy_state *ps)
 	list_for_each_entry_safe(pe, tmp, &ps->events, node) {
 		if (pe->e) {
 			log_info("cancel %s, event: %s %d %d", pe->what,
-				 pe->e->name, pe->e->type, pe->e->fd);
+			         pe->e->name, pe->e->type, pe->e->fd);
 
 			event_cancel_event(pe->e);
 		}
 		if (pe->async && pe->async_other) {
 			log_info("cancel %s, event: %s %d %d", pe->what,
 			         pe->async_other->name,
-				 pe->async_other->type,
-				 pe->async_other->fd);
+			         pe->async_other->type,
+			         pe->async_other->fd);
 
 			event_cancel_event(pe->async_other);
 		}
@@ -311,9 +313,9 @@ int proxy_event_handler(struct event *e)
 	ps = pe->ps;
 
 	log_info("%s->%s %s->%s fd %d run %s",
-	          sockaddr_string(&ps->cli), sockaddr_string1(&ps->cself),
-	          sockaddr_string2(&ps->sself), sockaddr_string3(&ps->svr),
-		  e->fd, pe->what);
+	         sockaddr_string(&ps->cli), sockaddr_string1(&ps->cself),
+	         sockaddr_string2(&ps->sself), sockaddr_string3(&ps->svr),
+	         e->fd, pe->what);
 	if (pe->async) {
 		if (e->type == EVENT_READ && pe->async_other) {
 			event_cancel_event(pe->async_other);
@@ -348,7 +350,7 @@ int proxy_add_read(
 	pe = proxy_get_event(ps, handler, what);
 	if (NULL == pe) {
 		proxy_error(ps, dir, "fail to get event when add read %s on %d",
-			  what, fd);
+		            what, fd);
 
 		proxy_free_ps(ps);
 
@@ -456,7 +458,8 @@ int proxy_process_async(
 	for (i = 0; i < nr_add; i++) {
 		pe = proxy_get_event(ps, handler, what);
 		if (NULL == pe) {
-			proxy_error(ps, dir, "fail to get event when add async %s",
+			proxy_error(ps, dir,
+			            "fail to get event when add async %s",
 			            what);
 
 			mem_free(add_fds);
@@ -470,17 +473,18 @@ int proxy_process_async(
 		pe->e = event_add_read(es, proxy_event_handler, pe, add_fds[i]);
 		if (NULL == pe->e) {
 			proxy_error(ps, dir, "fail to add read %s on %d",
-				    what, add_fds[i]);
+			            what, add_fds[i]);
 
 			mem_free(add_fds);
 			proxy_free_ps(ps);
 
 			return -1;
 		}
-		pe->async_other = event_add_write(es, proxy_event_handler, pe, add_fds[i]);
+		pe->async_other = event_add_write(es, proxy_event_handler,
+		                                  pe, add_fds[i]);
 		if (NULL == pe->e) {
 			proxy_error(ps, dir, "fail to add read %s on %d",
-				    what, add_fds[i]);
+			            what, add_fds[i]);
 
 			mem_free(add_fds);
 			proxy_free_ps(ps);
@@ -533,6 +537,14 @@ int proxy_add_timeout(
 	return 0;
 }
 
+void proxy_ssl_trace_cb(const SSL *ssl, int where, int ret)
+{
+	log_debug("error");
+	if (where & SSL_CB_EXIT) {
+		log_debug("error");
+	}
+}
+
 int proxy_timeout(struct proxy_state *ps)
 {
 	if (g_proxy_time - ps->svr_active > PROXY_TIMEOUT
@@ -543,7 +555,7 @@ int proxy_timeout(struct proxy_state *ps)
 	}
 
 	if (0 != proxy_add_timeout(ps, PROXY_TIMEOUT, SSL_DIR_2C,
-				    proxy_timeout, "timeout")) {
+	                           proxy_timeout, "timeout")) {
 		proxy_free_ps(ps);
 
 		return -1;
@@ -564,8 +576,7 @@ int proxy_init_self_ssl_ctx(char *key_file, char *csr_file, int type)
 
 	ctx = SSL_CTX_new(SSLv23_server_method());
 	if (ctx == NULL) {
-		log_fatal("SSL_CTX_new, err: %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		log_fatal("SSL_CTX_new, err: %s", PROXY_SSL_ERROR);
 
 		return -1;
 	}
@@ -577,7 +588,7 @@ int proxy_init_self_ssl_ctx(char *key_file, char *csr_file, int type)
 	/* 载入用户私钥 */
 	if (SSL_CTX_use_PrivateKey_file(ctx, key_file, type) <= 0) {
 		log_fatal("SSL_CTX_use_PrivateKey_file err : %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		          PROXY_SSL_ERROR);
 		SSL_CTX_free(ctx);
 
 		return -1;
@@ -586,7 +597,7 @@ int proxy_init_self_ssl_ctx(char *key_file, char *csr_file, int type)
 	/* 载入用户的数字证书， 此证书用来发送给客户端。 证书里包含有公钥 */
 	if (SSL_CTX_use_certificate_file(ctx, csr_file, type) <= 0) {
 		log_fatal("SSL_CTX_use_certificate_file err : %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		          PROXY_SSL_ERROR);
 		SSL_CTX_free(ctx);
 		return -1;
 	}
@@ -594,7 +605,7 @@ int proxy_init_self_ssl_ctx(char *key_file, char *csr_file, int type)
 	/* 检查用户私钥是否正确 */
 	if (!SSL_CTX_check_private_key(ctx)) {
 		log_fatal("SSL_CTX_check_private_key err : %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		          PROXY_SSL_ERROR);
 		SSL_CTX_free(ctx);
 
 		return -1;
@@ -669,17 +680,15 @@ int proxy_init_opts()
 
 	ctx = SSL_CTX_new(SSLv23_server_method());
 	if (NULL == ctx) {
-		log_fatal("fail to new ssl ctx %s",
-			  ERR_error_string(ERR_get_error(), NULL));
+		log_fatal("fail to new ssl ctx %s", PROXY_SSL_ERROR);
 
 		return -1;
 	}
 
 	if (1 != SSL_CTX_use_PrivateKey_file(ctx, PROXY_CA_KEY_PATH,
-					     SSL_FILETYPE_PEM)) {
+	                                     SSL_FILETYPE_PEM)) {
 		log_fatal("fail to use private key file %s, %s",
-			  PROXY_CA_KEY_PATH,
-			  ERR_error_string(ERR_get_error(), NULL));
+		          PROXY_CA_KEY_PATH, PROXY_SSL_ERROR);
 
 		SSL_CTX_free(ctx);
 
@@ -687,10 +696,9 @@ int proxy_init_opts()
 	}
 
 	if (1 != SSL_CTX_use_certificate_file(ctx, PROXY_CA_CERT_PATH,
-					      SSL_FILETYPE_PEM)) {
+	                                      SSL_FILETYPE_PEM)) {
 		log_fatal("fail to use private cert file %s, %s",
-		          PROXY_CA_CERT_PATH,
-		          ERR_error_string(ERR_get_error(), NULL));
+		          PROXY_CA_CERT_PATH, PROXY_SSL_ERROR);
 
 		SSL_CTX_free(ctx);
 
@@ -699,8 +707,7 @@ int proxy_init_opts()
 
 	ssl = SSL_new(ctx);
 	if (NULL == ssl) {
-		log_fatal("fail to create ssl object, %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		log_fatal("fail to create ssl object, %s", PROXY_SSL_ERROR);
 		SSL_CTX_free(ctx);
 
 		return -1;
@@ -736,7 +743,7 @@ int proxy_copyrand(X509 *dstcrt, X509 *srccrt)
 	unsigned int rand;
 	int rv;
 
-	rv = RAND_pseudo_bytes((unsigned  char *)&rand, sizeof(rand));
+	rv = RAND_pseudo_bytes((unsigned char *) &rand, sizeof(rand));
 
 	dstptr = X509_get_serialNumber(dstcrt);/* 获取证书序列号 */
 	srcptr = X509_get_serialNumber(srccrt);
@@ -820,7 +827,7 @@ proxy_ssl_x509_v3ext_copy_by_nid(X509 *crt, X509 *origcrt, int nid)
 }
 
 X509 *proxy_make_cert(X509 *cacrt, EVP_PKEY *cakey, X509 *svr_crt,
-		    const char *extraname, EVP_PKEY *key)
+                      const char *extraname, EVP_PKEY *key)
 {
 	X509_NAME *subject, *issuer;
 	GENERAL_NAMES *names;
@@ -867,28 +874,30 @@ X509 *proxy_make_cert(X509 *cacrt, EVP_PKEY *cakey, X509 *svr_crt,
 	X509V3_set_ctx(&ctx, cacrt, crt, NULL, NULL, 0);
 	if (proxy_add_x509_v3ext(&ctx, crt, "basicConstraints",
 	                         "CA:FALSE") == -1 ||
-		proxy_add_x509_v3ext(&ctx, crt, "keyUsage",
-		                     "digitalSignature,"
-		                     "keyEncipherment") == -1 ||
-		proxy_add_x509_v3ext(&ctx, crt, "extendedKeyUsage",
-		                     "serverAuth") == -1 ||
-		proxy_add_x509_v3ext(&ctx, crt, "subjectKeyIdentifier",
-		                     "hash") == -1 ||
-		proxy_add_x509_v3ext(&ctx, crt, "authorityKeyIdentifier",
-		                     "keyid,issuer:always") == -1)
+	    proxy_add_x509_v3ext(&ctx, crt, "keyUsage",
+	                         "digitalSignature,"
+	                         "keyEncipherment") == -1 ||
+	    proxy_add_x509_v3ext(&ctx, crt, "extendedKeyUsage",
+	                         "serverAuth") == -1 ||
+	    proxy_add_x509_v3ext(&ctx, crt, "subjectKeyIdentifier",
+	                         "hash") == -1 ||
+	    proxy_add_x509_v3ext(&ctx, crt, "authorityKeyIdentifier",
+	                         "keyid,issuer:always") == -1)
 		goto errout;
 
 	if (!extraname) {
 		/* no extraname provided: copy original subjectAltName ext */
 		if (proxy_ssl_x509_v3ext_copy_by_nid(crt, svr_crt,
-		                                     NID_subject_alt_name) == -1)
+		                                     NID_subject_alt_name) ==
+		    -1)
 			goto errout;
 	} else {
 		names = X509_get_ext_d2i(svr_crt, NID_subject_alt_name, 0, 0);
 		if (!names) {
 			/* no subjectAltName present: add new one */
 			char cfval[HOST_STR_LEN];
-			if (snprintf(cfval, sizeof(cfval), "DNS:%s", extraname) < 0)
+			if (snprintf(cfval, sizeof(cfval), "DNS:%s",
+			             extraname) < 0)
 				goto errout;
 			if (proxy_add_x509_v3ext(&ctx, crt, "subjectAltName",
 			                         cfval) == -1) {
@@ -905,8 +914,8 @@ X509 *proxy_make_cert(X509 *cacrt, EVP_PKEY *cakey, X509 *svr_crt,
 			if (!gn->d.dNSName)
 				goto errout3;
 			ASN1_STRING_set(gn->d.dNSName,
-			                (unsigned char *)extraname,
-			                (int)strlen(extraname));
+			                (unsigned char *) extraname,
+			                (int) strlen(extraname));
 			sk_GENERAL_NAME_push(names, gn);
 			X509_EXTENSION *ext = X509V3_EXT_i2d(
 				NID_subject_alt_name, 0, names);
@@ -920,13 +929,9 @@ X509 *proxy_make_cert(X509 *cacrt, EVP_PKEY *cakey, X509 *svr_crt,
 			sk_GENERAL_NAME_pop_free(names, GENERAL_NAME_free);
 		}
 	}
-#ifdef DEBUG_CERTIFICATE
-	ssl_x509_v3ext_add(&ctx, crt, "nsComment", "Generated by " PNAME);
-#endif /* DEBUG_CERTIFICATE */
 
 	const EVP_MD *md;
 	switch (EVP_PKEY_type(EVP_PKEY_get_id(cakey))) {
-#ifndef OPENSSL_NO_RSA
 	case EVP_PKEY_RSA:
 		switch (X509_get_signature_nid(svr_crt)) {
 		case NID_md5WithRSAEncryption:
@@ -951,17 +956,12 @@ X509 *proxy_make_cert(X509 *cacrt, EVP_PKEY *cakey, X509 *svr_crt,
 			break;
 		}
 		break;
-#endif /* !OPENSSL_NO_RSA */
-#ifndef OPENSSL_NO_DSA
 	case EVP_PKEY_DSA:
 		md = EVP_sha1();
 		break;
-#endif /* !OPENSSL_NO_DSA */
-#ifndef OPENSSL_NO_ECDSA
 	case EVP_PKEY_EC:
 		md = EVP_sha256();
 		break;
-#endif /* !OPENSSL_NO_ECDSA */
 	default:
 		goto errout;
 	}
@@ -1009,9 +1009,13 @@ static void proxy_set_ctx_options(SSL_CTX *sslctx)
 #ifdef SSL_OP_NO_TLSv1
 	SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1);
 #endif /* !SSL_OP_NO_TLSv1 */
+	SSL_CTX_set_options(sslctx, SSL_OP_NO_ENCRYPT_THEN_MAC);
 
-	SSL_CTX_set_cipher_list(sslctx,
-	                        "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:AES256-SHA256:!RC4");
+	SSL_CTX_set_cipher_list(
+		sslctx,
+		"ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:"
+		"ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:AES256-SHA256:"
+		"!RC4");
 }
 
 struct ssl_state *proxy_create_cli_ssl_state(struct proxy_state *ps)
@@ -1029,14 +1033,14 @@ struct ssl_state *proxy_create_cli_ssl_state(struct proxy_state *ps)
 	ps->client = ss;
 
 	ss->crt = proxy_make_cert(m_proxy_opts.cacrt, m_proxy_opts.cakey,
-				  ps->server->crt, NULL, m_proxy_opts.key);
+	                          ps->server->crt, NULL, m_proxy_opts.key);
 	if (NULL == ss->crt) {
 		log_error("fail to make cert");
 
 		return NULL;
 	}
 
-	ss->ctx = SSL_CTX_new(SSLv23_server_method());
+	ss->ctx = SSL_CTX_new(SSLv23_method());
 	proxy_set_ctx_options(ss->ctx);
 
 	SSL_CTX_use_certificate(ss->ctx, ss->crt);
@@ -1050,12 +1054,13 @@ struct ssl_state *proxy_create_cli_ssl_state(struct proxy_state *ps)
 
 	ss->ssl = SSL_new(ss->ctx);
 	if (NULL == ss->ssl) {
-		log_error("SSL_new err : %s",
-			  ERR_error_string(ERR_get_error(), NULL));
+		log_error("SSL_new err : %s", PROXY_SSL_ERROR);
 		mem_free(ss);
 
 		return NULL;
 	}
+
+	SSL_set_info_callback(ss->ssl, proxy_ssl_trace_cb);
 
 #ifdef SSL_MODE_RELEASE_BUFFERS
 	/* lower memory footprint for idle connections */
@@ -1069,8 +1074,7 @@ struct ssl_state *proxy_create_cli_ssl_state(struct proxy_state *ps)
 
 	ss->ssl_bio = BIO_new(BIO_f_ssl());
 	if (!ss->ssl_bio) {
-		log_error("cannot allocate ssl bio : %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		log_error("cannot allocate ssl bio : %s", PROXY_SSL_ERROR);
 		SSL_free(ss->ssl);
 		mem_free(ss);
 
@@ -1079,8 +1083,7 @@ struct ssl_state *proxy_create_cli_ssl_state(struct proxy_state *ps)
 
 	ss->in_bio = BIO_new(BIO_s_mem());
 	if (!ss->in_bio) {
-		log_error("cannot allocate read bio : %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		log_error("cannot allocate read bio : %s", PROXY_SSL_ERROR);
 		BIO_free(ss->ssl_bio);
 		SSL_free(ss->ssl);
 		mem_free(ss);
@@ -1091,8 +1094,7 @@ struct ssl_state *proxy_create_cli_ssl_state(struct proxy_state *ps)
 
 	ss->out_bio = BIO_new(BIO_s_mem());
 	if (!ss->out_bio) {
-		log_error("cannot allocate write bio : %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		log_error("cannot allocate write bio : %s", PROXY_SSL_ERROR);
 		BIO_free(ss->ssl_bio);
 		BIO_free(ss->in_bio);
 		SSL_free(ss->ssl);
@@ -1127,8 +1129,7 @@ struct ssl_state *proxy_create_svr_ssl_state(const char *sni)
 
 	ss->ctx = SSL_CTX_new(SSLv23_client_method());
 	if (NULL == ss->ctx) {
-		log_error("SSL_CTX_new err : %s",
-		          ERR_error_string(ERR_get_error(), NULL));
+		log_error("SSL_CTX_new err : %s", PROXY_SSL_ERROR);
 		mem_free(ss);
 
 		return NULL;
@@ -1140,7 +1141,7 @@ struct ssl_state *proxy_create_svr_ssl_state(const char *sni)
 	ss->ssl = SSL_new(ss->ctx);
 	SSL_CTX_free(ss->ctx);
 	if (NULL == ss->ssl) {
-		log_error("SSL_new error:%s ", ERR_error_string(ERR_get_error(), NULL));
+		log_error("SSL_new error:%s ", PROXY_SSL_ERROR);
 		mem_free(ss);
 
 		return NULL;
@@ -1160,7 +1161,7 @@ struct ssl_state *proxy_create_svr_ssl_state(const char *sni)
 
 	ss->ssl_bio = BIO_new(BIO_f_ssl());
 	if (!ss->ssl_bio) {
-		log_error("cannot allocate ssl bio : %s\n", ERR_error_string(ERR_get_error(), NULL));
+		log_error("cannot allocate ssl bio : %s\n", PROXY_SSL_ERROR);
 		SSL_free(ss->ssl);
 		mem_free(ss);
 
@@ -1170,7 +1171,7 @@ struct ssl_state *proxy_create_svr_ssl_state(const char *sni)
 
 	ss->in_bio = BIO_new(BIO_s_mem());
 	if (!ss->in_bio) {
-		log_error("cannot allocate read bio : %s\n", ERR_error_string(ERR_get_error(), NULL));
+		log_error("cannot allocate read bio : %s\n", PROXY_SSL_ERROR);
 		BIO_free(ss->ssl_bio);
 		SSL_free(ss->ssl);
 		mem_free(ss);
@@ -1180,7 +1181,7 @@ struct ssl_state *proxy_create_svr_ssl_state(const char *sni)
 
 	ss->out_bio = BIO_new(BIO_s_mem());
 	if (!ss->out_bio) {
-		log_error("cannot allocate write bio : %s\n", ERR_error_string(ERR_get_error(), NULL));
+		log_error("cannot allocate write bio : %s\n", PROXY_SSL_ERROR);
 		BIO_free(ss->ssl_bio);
 		BIO_free(ss->in_bio);
 		SSL_free(ss->ssl);
@@ -1261,10 +1262,10 @@ int proxy_read(int fd, char *buf, int buf_len)
 	} else if (rlen < 0) {
 		log_error("read error, fd: %d", fd);
 
-		return (int)rlen;
+		return (int) rlen;
 	}
 
-	return (int)rlen;
+	return (int) rlen;
 }
 
 int proxy_tcp_2_bio(int fd,
@@ -1285,7 +1286,7 @@ int proxy_tcp_2_bio(int fd,
 		return -1;
 	}
 
-	wlen = BIO_write(bio, buf, (int)rlen);
+	wlen = BIO_write(bio, buf, (int) rlen);
 	proxy_debug(ps, ss->dir, "tcp to bio, rlen: %d, wlen: %d", rlen, wlen);
 	/* TODO 判断是不是都写进去了 */
 
@@ -1310,7 +1311,7 @@ void proxy_process_ssl_error(
 			ss->want = SSL_WANT_READ;
 
 		proxy_info(ps, ss->dir, "ssl error want read, want %d",
-			   ss->want);
+		           ss->want);
 
 		break;
 	case SSL_ERROR_WANT_WRITE:
@@ -1319,18 +1320,19 @@ void proxy_process_ssl_error(
 		ss->want = SSL_WANT_WRITE;
 
 		proxy_info(ps, ss->dir, "ssl error want write, want %d",
-			   ss->want);
+		           ss->want);
 
 		break;
 	case SSL_ERROR_WANT_ASYNC:
 		ss->want = SSL_WANT_ASYNC;
 
 		proxy_info(ps, ss->dir, "ssl error want async, want %d",
-			   ss->want);
+		           ss->want);
 
 		break;
 	default:
-		proxy_error(ps, ss->dir, "ssl error: %s", PROXY_SSL_ERROR);
+		proxy_error(ps, ss->dir, "ssl error: %d %s",
+		            ERR_get_error(), PROXY_SSL_ERROR);
 		ss->need_finish = 1;
 		break;
 	}
@@ -1410,6 +1412,7 @@ int proxy_start_handshake_client(struct proxy_state *ps)
 }
 
 int proxy_wait_cli_req(struct proxy_state *ps);
+
 int proxy_wait_server_response(struct proxy_state *ps)
 {
 	struct ssl_state *ss;
@@ -1441,7 +1444,8 @@ int proxy_wait_server_response(struct proxy_state *ps)
 		if (wlen < rlen) {
 			// TODO
 		}
-		proxy_bio_2_tcp(ps->client->out_bio, ps->cli_fd, ps, ps->client);
+		proxy_bio_2_tcp(ps->client->out_bio, ps->cli_fd, ps,
+		                ps->client);
 	}
 
 	return 0;
@@ -1614,10 +1618,10 @@ int proxy_handshake_cli(struct proxy_state *ps)
 		break;
 	case SSL_WANT_ASYNC:
 		if (-1 == proxy_process_async(ps, SSL_DIR_2C,
-					      proxy_handshake_cli,
-					      "proxy_handshake_cli"))
-	default:
-		proxy_error_cli(ps, "fail to add handshake cli write");
+		                              proxy_handshake_cli,
+		                              "proxy_handshake_cli"))
+		default:
+			proxy_error_cli(ps, "fail to add handshake cli write");
 		// TODO 异步
 		goto ERROR;
 	}
@@ -1684,8 +1688,8 @@ int proxy_handshake_svr(struct proxy_state *ps)
 			break;
 		case SSL_WANT_WRITE:
 			if (-1 == proxy_add_write(ps, ps->cli_fd, SSL_DIR_2C,
-			                         proxy_handshake_cli,
-			                         "handshake client")) {
+			                          proxy_handshake_cli,
+			                          "handshake client")) {
 				proxy_info_cli(ps, "fail to add handshake cli");
 
 				goto ERROR;
@@ -1778,7 +1782,7 @@ int proxy_wait_server_connect(struct proxy_state *ps)
 		return -1;
 	}
 
-	switch(ps->server->want) {
+	switch (ps->server->want) {
 	case SSL_WANT_ASYNC:
 		return proxy_process_async(
 			ps, SSL_DIR_2S, proxy_handshake_svr,
@@ -1803,7 +1807,7 @@ int proxy_send_connected(int fd)
 	stpcpy(buf, PROXY_CONNECTED);
 
 	// TODO 这里不太严谨，可能没有完全发送出去
-	return (int)write(fd, buf, strlen(buf));
+	return (int) write(fd, buf, strlen(buf));
 }
 
 int proxy_peek_sni(struct proxy_state *ps)
@@ -1816,7 +1820,7 @@ int proxy_peek_sni(struct proxy_state *ps)
 	int again;
 	int ret;
 
-	rlen = (int)recv(ps->cli_fd, buf, sizeof(buf), MSG_PEEK);
+	rlen = (int) recv(ps->cli_fd, buf, sizeof(buf), MSG_PEEK);
 	if (0 == rlen) {
 		proxy_info_cli(ps, "client close connect when peek sni");
 
@@ -1859,8 +1863,8 @@ int proxy_peek_sni(struct proxy_state *ps)
 		proxy_info_cli(ps, "connecting server");
 
 		if (0 != proxy_add_write(ps, ps->svr_fd, SSL_DIR_2S,
-					  proxy_wait_server_connect,
-		                          "proxy_wati_server_connect")) {
+		                         proxy_wait_server_connect,
+		                         "proxy_wati_server_connect")) {
 			ret = -1;
 
 			goto FINISH;
@@ -1892,7 +1896,7 @@ int proxy_peek_sni(struct proxy_state *ps)
 	case SSL_WANT_WRITE:
 		if (0 != proxy_add_write(ps, ps->svr_fd, SSL_DIR_2S,
 		                         proxy_handshake_svr,
-		                        "handshake_server_write")) {
+		                         "handshake_server_write")) {
 			ret = -1;
 			goto FINISH;
 		}
@@ -1977,7 +1981,8 @@ int proxy_parse_connect_request(
 	ps->port[l] = '\0';
 
 	if (*req != ' ') {
-		proxy_error_cli(ps, "port too long in conn req, %.*s", len, req);
+		proxy_error_cli(ps, "port too long in conn req, %.*s", len,
+		                req);
 
 		return -1;
 	}
@@ -1989,13 +1994,13 @@ int proxy_parse_connect_request(
 	}
 
 	if (1 == inet_pton(AF_INET, ps->host,
-	                   &((struct sockaddr_in *)(&ps->svr))->sin_addr)) {
-		((struct sockaddr_in *)(&ps->svr))->sin_family = AF_INET;
-		((struct sockaddr_in *)(&ps->svr))->sin_port = htons(port);
+	                   &((struct sockaddr_in *) (&ps->svr))->sin_addr)) {
+		((struct sockaddr_in *) (&ps->svr))->sin_family = AF_INET;
+		((struct sockaddr_in *) (&ps->svr))->sin_port = htons(port);
 	} else if (1 == inet_pton(AF_INET6, ps->host,
-	                          &((struct sockaddr_in6 *)(&ps->svr))->sin6_addr)) {
-		((struct sockaddr_in6 *)(&ps->svr))->sin6_family = AF_INET6;
-		((struct sockaddr_in6 *)(&ps->svr))->sin6_port = htons(port);
+	                          &((struct sockaddr_in6 *) (&ps->svr))->sin6_addr)) {
+		((struct sockaddr_in6 *) (&ps->svr))->sin6_family = AF_INET6;
+		((struct sockaddr_in6 *) (&ps->svr))->sin6_port = htons(port);
 	} else {
 		bzero(&hints, sizeof(hints));
 		hints.ai_family = AF_INET;
@@ -2012,8 +2017,8 @@ int proxy_parse_connect_request(
 		}
 
 		memcpy(&ps->svr, result->ai_addr, result->ai_addrlen);
-		((struct sockaddr_in *)(&ps->svr))->sin_family = AF_INET;
-		((struct sockaddr_in *)(&ps->svr))->sin_port = htons(port);
+		((struct sockaddr_in *) (&ps->svr))->sin_family = AF_INET;
+		((struct sockaddr_in *) (&ps->svr))->sin_port = htons(port);
 
 		freeaddrinfo(result);
 	}
@@ -2045,7 +2050,7 @@ int proxy_process_connect_request(
 		if (0 != proxy_add_read(ps, e->fd, SSL_DIR_2C,
 		                        proxy_peek_sni, "proxy_peek_sni")) {
 			proxy_error_cli(ps, "wait connect request fail"
-					    " to add read");
+			                    " to add read");
 
 			return -1;
 		}
@@ -2073,7 +2078,7 @@ ERROR:
 int proxy_receive_connect_request(struct event *e)
 {
 	struct sockaddr addr;
-	socklen_t  len;
+	socklen_t len;
 	struct proxy_state *ps;
 	char buf[RECV_BUF_LEN];
 	ssize_t rlen;
@@ -2085,7 +2090,7 @@ int proxy_receive_connect_request(struct event *e)
 	rlen = proxy_read(e->fd, buf, sizeof(buf));
 	if (rlen <= 0) {
 		log_info("connect request read nothing, err: %d, fd %d, svr %s",
-			 errno, e->fd, sockaddr_string(&src));
+		         errno, e->fd, sockaddr_string(&src));
 
 		close(e->fd);
 
@@ -2097,7 +2102,7 @@ int proxy_receive_connect_request(struct event *e)
 		sizeof(PROXY_CONNECT_REQUEST_PREFIX) - 1)) {
 		// TODO 有的客户端直接就ssl握手
 		log_error("not proxy connect request, fd %d, peer %s",
-			  e->fd, sockaddr_string(&src));
+		          e->fd, sockaddr_string(&src));
 
 		close(e->fd);
 
@@ -2105,12 +2110,12 @@ int proxy_receive_connect_request(struct event *e)
 	}
 
 	log_debug("connect request: %.*s from %s, rlen: %d",
-		  rlen - 1, buf, sockaddr_string(&src), rlen);
+	          rlen - 1, buf, sockaddr_string(&src), rlen);
 
 	len = sizeof(addr);
 	if (0 != getsockname(e->fd, &addr, &len)) {
 		log_error("fail to get self addr when process connect request,"
-			  " fd %d, peer %s", e->fd, sockaddr_string(&src));
+		          " fd %d, peer %s", e->fd, sockaddr_string(&src));
 
 		close(e->fd);
 
@@ -2120,7 +2125,7 @@ int proxy_receive_connect_request(struct event *e)
 	ps = proxy_alloc_ps();
 	if (NULL == ps) {
 		log_error("fail to alloc ps when receiving connect request,"
-			  " fd %d, peer %s", e->fd, sockaddr_string(&src));
+		          " fd %d, peer %s", e->fd, sockaddr_string(&src));
 
 		close(e->fd);
 
@@ -2132,14 +2137,14 @@ int proxy_receive_connect_request(struct event *e)
 
 	proxy_debug_cli(ps, "connect request received");
 
-	return proxy_process_connect_request(e, ps, buf, (int)rlen);
+	return proxy_process_connect_request(e, ps, buf, (int) rlen);
 }
 
 int proxy_connect_request_timeout(struct event *e)
 {
 	int fd;
 
-	fd = (int)(long)e->arg;
+	fd = (int) (long) e->arg;
 
 	close(fd);
 
@@ -2174,7 +2179,7 @@ int proxy_accept_tcp_connect(struct event *e)
 
 	event_add_read(e->scheduler, proxy_receive_connect_request, addr, fd);
 	event_add_timer(e->scheduler, proxy_connect_request_timeout,
-			(void *)(long)fd, PROXY_TIMEOUT);
+	                (void *) (long) fd, PROXY_TIMEOUT);
 
 	return 0;
 }
@@ -2182,9 +2187,12 @@ int proxy_accept_tcp_connect(struct event *e)
 void proxy_init_ssl(struct event_scheduler *es, int listen)
 {
 	if (0 == OPENSSL_init_ssl(
-		OPENSSL_INIT_LOAD_CONFIG | OPENSSL_INIT_ENGINE_ALL_BUILTIN,
+		OPENSSL_INIT_ENGINE_ALL_BUILTIN
+		| OPENSSL_INIT_ADD_ALL_CIPHERS
+		| OPENSSL_INIT_ADD_ALL_DIGESTS
+		| OPENSSL_INIT_ASYNC,
 		NULL)) {
-		perror("OPENSSL_init_ssl");
+		log_error("OPENSSL_init_ssl, %s", PROXY_SSL_ERROR);
 
 		exit(0);
 	}
@@ -2198,12 +2206,11 @@ void proxy_init_ssl(struct event_scheduler *es, int listen)
 
 		m_proxy_opts.async = 1;
 	}
+	proxy_init_opts();
 
 	proxy_init_self_ssl_ctx(PROXY_SELF_CERT_KEY_PATH,
-				PROXY_SELF_CERT_PATH,
-				X509_FILETYPE_PEM);
-
-	proxy_init_opts();
+	                        PROXY_SELF_CERT_PATH,
+	                        X509_FILETYPE_PEM);
 
 	event_add_read(es, proxy_accept_tcp_connect, NULL, listen);
 }

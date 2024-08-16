@@ -44,13 +44,13 @@ struct snake {
 };
 
 struct screen {
-	int width(struct screen *s);
-	int height(struct screen *s);
+	int (*width)(struct screen *s);
+	int (*height)(struct screen *s);
 
-	struct point *get_point(struct screen *s, int x, int y);
-	int change_point(struct screen *s, struct point *point);
+	struct point *(*get_point)(struct screen *s, int x, int y);
+	int (*change_point)(struct screen *s, struct point *point);
 
-	long long get_input(struct screen *s);
+	long long (*get_input)(struct screen *s);
 };
 
 #endif //SNAKE_H

@@ -5,6 +5,14 @@
 
 #include "config.h"
 
+struct mem_func_set {
+	void *(*alloc)(size_t sz);
+
+	void *(*realloc)(void *ptr, size_t sz);
+
+	void (*free)(void *ptr);
+};
+
 #ifdef USE_MEMHOOK
 extern void *(*mem_alloc)(size_t size);
 extern void *(*mem_realloc)(void *ptr, size_t size);

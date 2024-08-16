@@ -225,48 +225,5 @@ long long get_millisecond()
 
 void snake_main(struct screen *screen)
 {
-	struct snake *snake;
-	long long now;
-	long long last;
-	int input;
 
-	snake = create_snake(screen, SNAKE_INTERVAL);
-
-	last = 0;
-	while (1) {
-		now = get_millisecond();
-		if (now - last > snake->move_interval) {
-			snake_move(snake, screen);
-			last = now;
-		}
-
-		input = screen->get_input(screen);
-		if (ERR == input) {
-			usleep(10);
-
-			continue;
-		}
-
-		switch (input) {
-		case 'w':
-		case 'W':
-			snake_change_dir(snake, SNAKE_DIR_UP);
-			break;
-		case 's':
-		case 'S':
-			snake_change_dir(snake, SNAKE_DIR_DOWN);
-			break;
-		case 'a':
-		case 'A':
-			snake_change_dir(snake, SNAKE_DIR_RIGHT);
-			break;
-		case 'd':
-		case 'D':
-			snake_change_dir(snake, SNAKE_DIR_RIGHT);
-			break;
-		default:
-			continue;;
-		}
-	}
-OUT:
 }

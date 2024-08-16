@@ -22,7 +22,7 @@ subdir('basic')
 subdir('event')
 subdir('echo_server')
 subdir('test')
-subdir('game')
+#subdir('game')
 # subdir('proxy')
 
 configure_file(
