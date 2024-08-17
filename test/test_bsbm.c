@@ -287,10 +287,54 @@ void generate_ip4_random_flow(
 	c[3] = (ce[3] - cb[3]) / div + cb[3];
 }
 
+int data_in_range(void *data, enum bsbm_type_e t, struct test_data_range *r)
+{
+	int (*cmp)(const void *a, const void *b) = bsbm_get_cmp_fn(t);
+
+	if (cmp(data, &r->begin) < 0)
+		return 0;
+
+	if (cmp(data, &r->end) > 0)
+		return 0;
+
+	return 1;
+}
+
+int flow_match_policy(struct test_flow *flow, struct test_policy *policy)
+{
+	int i;
+	int j;
+	struct test_data_range *r;
+	int match;
+	void *data[TEST_FIELD_MAX];
+
+	data[TEST_FIELD_SPORT] = &flow->sport;
+	data[TEST_FIELD_DPORT] = &flow->dport;
+	data[TEST_FIELD_SIP] = &flow->sip;
+	data[TEST_FIELD_DIP] = &flow->dip;
+	for (i = 0; i < TEST_FIELD_MAX; i++) {
+		match = 0;
+
+		for (j = 0; j < policy->rs[i].nr; j++) {
+			r = &policy->rs[i].range[j];
+			if (data_in_range(data[i], policy->rs[i].type, r)) {
+				match = 1;
+				break;
+			}
+		}
+
+		if (0 == match)
+			return 0;
+	}
+
+	return 1;
+}
+
 static void test_bsbm_random()
 {
-#define MAX_FLOW 1000000
+#define MAX_FLOW 100000
 	int i;
+	int j;
 	struct test_policy_manager tpm = {0};
 	struct test_flow flow;
 	struct bm *b;
@@ -309,6 +353,14 @@ static void test_bsbm_random()
 
 		CU_ASSERT_TRUE(bm_test(b, flow.id));
 
+		for (j = 0; j < tpm.nr; j++) {
+			if (flow_match_policy(&flow, &tpm.policies[j])) {
+				CU_ASSERT_TRUE(bm_test(b, j));
+			} else {
+				CU_ASSERT_FALSE(bm_test(b, j));
+			}
+		}
+
 		generate_ip4_random_flow(&tpm, &flow);
 		bm_zero(b);
 		bsbm_match(tpm.matcher[0], &flow.sport, b, BM_OP_OR);
@@ -317,6 +369,14 @@ static void test_bsbm_random()
 		bsbm_match(tpm.matcher[3], &flow.dip, b, BM_OP_AND);
 
 		CU_ASSERT_TRUE(bm_test(b, flow.id));
+
+		for (j = 0; j < tpm.nr; j++) {
+			if (flow_match_policy(&flow, &tpm.policies[j])) {
+				CU_ASSERT_TRUE(bm_test(b, j));
+			} else {
+				CU_ASSERT_FALSE(bm_test(b, j));
+			}
+		}
 	}
 
 	for (i = 0; i < TEST_FIELD_MAX; i++)
