@@ -115,7 +115,7 @@ static void test_bm_set_unset_zero()
 		bm_set(b1, i);
 		CU_ASSERT_TRUE(bm_test(b1, i));
 	}
-	CU_ASSERT_EQUAL(64, bm_count_set(b1));
+	CU_ASSERT_EQUAL(64, bm_nr_set(b1));
 
 	for (i = 0; i < 128; i++) {
 		bm_set(b1, i);
@@ -458,10 +458,10 @@ TEST_START:
 				CU_ASSERT_FALSE(bm_test(b3, j));
 			}
 		}
-		CU_ASSERT_TRUE(bm_intersect(b1, b3) || bm_is_empty(b3));
-		CU_ASSERT_TRUE(bm_intersect(b2, b3) || bm_is_empty(b3));
-		CU_ASSERT_FALSE(bm_intersect(b1, b3) && bm_is_empty(b3));
-		CU_ASSERT_FALSE(bm_intersect(b2, b3) && bm_is_empty(b3));
+		CU_ASSERT_TRUE(bm_has_common(b1, b3) || bm_is_empty(b3));
+		CU_ASSERT_TRUE(bm_has_common(b2, b3) || bm_is_empty(b3));
+		CU_ASSERT_FALSE(bm_has_common(b1, b3) && bm_is_empty(b3));
+		CU_ASSERT_FALSE(bm_has_common(b2, b3) && bm_is_empty(b3));
 		j = -1;
 		while (-1 != (j = bm_next(b3, j))) {
 			CU_ASSERT_TRUE(set1[j]);
@@ -477,7 +477,7 @@ TEST_START:
 			bm_unset(b1, j);
 			set1[j] = 0;
 		}
-		CU_ASSERT_FALSE(bm_intersect(b1, b2));
+		CU_ASSERT_FALSE(bm_has_common(b1, b2));
 		while (-1 != (j = bm_next(b1, j))) {
 			bm_unset(b1, j);
 			set1[j] = 0;
@@ -489,7 +489,7 @@ TEST_START:
 			set1[j] = 1;
 			CU_ASSERT_TRUE(bm_test(b1, j));
 		}
-		CU_ASSERT_EQUAL(bm_count_set(b1), BM_TEST_MAX);
+		CU_ASSERT_EQUAL(bm_nr_set(b1), BM_TEST_MAX);
 	}
 
 	if (!fix_test)

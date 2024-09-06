@@ -4,6 +4,7 @@ basic_lib = library('basic',
 			   'memhook.c',
 			   'network_funcs.c',
 			   'rbtree.c',
+			   'abm.c',
 			   'bm.c',
 			   'bs.c',
 			   'bsbm.c'
